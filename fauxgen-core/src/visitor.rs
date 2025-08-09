@@ -59,7 +59,7 @@ impl FileImports {
     fn process_import_from(
         &mut self,
         import_from_stmt: &StmtImportFrom<TextRange>,
-        current_module_path: &PathBuf,
+        current_module_path: &Path,
     ) {
         if let Some(module) = &import_from_stmt.module {
             let module_str = module.to_string();
@@ -97,7 +97,7 @@ impl FileImports {
     fn resolve_relative_import(
         &self,
         relative_path: &str,
-        current_module_path: &PathBuf,
+        current_module_path: &Path,
     ) -> String {
         // ドットの数をカウント
         let dot_count = relative_path.chars().take_while(|&c| c == '.').count();
@@ -130,7 +130,7 @@ impl FileImports {
     }
 
     /// Convert a file path to a Python module name
-    fn path_to_module_name(&self, path: &PathBuf) -> String {
+    fn path_to_module_name(&self, path: &Path) -> String {
         // Get the path relative to the root module's parent
         let rel_path =
             match path.strip_prefix(self.root_module_path.parent().unwrap_or(Path::new("/"))) {
@@ -453,11 +453,11 @@ impl ClassVisitor {
             let path = entry.path();
 
             // Skip __init__.py as we've already processed it
-            if path.file_name().map_or(false, |f| f == "__init__.py") {
+            if path.file_name().is_some_and(|f| f == "__init__.py") {
                 continue;
             }
 
-            if path.is_file() && path.extension().map_or(false, |ext| ext == "py") {
+            if path.is_file() && path.extension().is_some_and(|ext| ext == "py") {
                 // Process Python file
                 println!("Processing file: {}", path.display());
                 let content = std::fs::read_to_string(&path)?;
@@ -512,7 +512,7 @@ impl ClassVisitor {
     /// Check if a class inherits from a specified base class
     /// - target_class_id: The class ID to check
     /// - base_class: The base class ID to check against
-    /// Returns true if target_class inherits from base_class (directly or indirectly)
+    ///   Returns true if target_class inherits from base_class (directly or indirectly)
     pub fn get_class_defs_of_base(
         &mut self,
         target_class_id: &ClassID,
@@ -728,15 +728,13 @@ mod tests {
 
         // Check file_class_ids mapping
         let file_class_ids = visitor.get_file_class_ids();
-        let expected_file_class_ids: HashMap<PathBuf, Vec<String>> = HashMap::from([
-            (
-                root_module_path.join("base_models.py"),
-                vec![
-                    "test_inheritance.base_models.BaseDataFrameModel".to_string(),
-                    "test_inheritance.base_models.UserBase".to_string()
-                ],
-            ),
-        ]);
+        let expected_file_class_ids: HashMap<PathBuf, Vec<String>> = HashMap::from([(
+            root_module_path.join("base_models.py"),
+            vec![
+                "test_inheritance.base_models.BaseDataFrameModel".to_string(),
+                "test_inheritance.base_models.UserBase".to_string(),
+            ],
+        )]);
 
         // Compare entire maps
         assert_eq!(file_class_ids, &expected_file_class_ids);
@@ -831,7 +829,7 @@ mod tests {
             vec![
                 "test_nested_inheritance.nested_model.BaseDataFrameModel".to_string(),
                 "test_nested_inheritance.nested_model.User".to_string(),
-                "test_nested_inheritance.nested_model.UserExtension".to_string()
+                "test_nested_inheritance.nested_model.UserExtension".to_string(),
             ],
         )]);
         assert_eq!(file_class_ids, &expected_file_class_ids);
