@@ -122,7 +122,9 @@ impl FileImports {
             current_dir.join(remaining.replace('.', "/"))
         };
 
-        // パスをPythonモジュール名に変換
+        // 相対パスの解決後、モジュール名として適切な形式に変換する
+        // target_pathはファイルシステム上のパスなので、Pythonのモジュールパスに変換する
+        // path_to_module_name関数はパスをモジュール名に変換する
         self.path_to_module_name(&target_path)
     }
 
@@ -606,48 +608,86 @@ mod tests {
 
         // Check inheritance map
         let inheritance_map = visitor.get_inheritance_map();
-        assert!(
-            inheritance_map
-                == HashMap::from([
-                    (
-                        "test_relative_import.subpackage.relative_import.RelativeUser".to_string(),
-                        vec!["base_model.BaseModel".to_string()]
-                    ),
-                    (
-                        "test_relative_import.base_model.BaseModel".to_string(),
-                        vec!["pandera.DataFrameModel".to_string()]
-                    )
-                ])
+        assert_eq!(
+            inheritance_map,
+            HashMap::from([
+                (
+                    "test_relative_import.base_model.BaseModel".to_string(),
+                    vec!["pandera.DataFrameModel".to_string()]
+                ),
+                (
+                    "test_relative_import.relative.child_model.ChildModel".to_string(),
+                    vec!["base_model.BaseModel".to_string()]
+                ),
+                (
+                    "test_relative_import.relative.nested.grandchild_model.GrandchildModel"
+                        .to_string(),
+                    vec!["base_model.BaseModel".to_string()]
+                ),
+                (
+                    "test_relative_import.relative.nested.grandchild_model.NestedChildModel"
+                        .to_string(),
+                    vec!["child_model.ChildModel".to_string()]
+                )
+            ]),
+            "Inheritance map should match expected structure"
         );
 
         // Check class definitions
         let class_defs = visitor.get_class_defs();
 
-        assert!(
-            class_defs
-                == &HashMap::from([
-                    (
-                        "test_relative_import.subpackage.relative_import.RelativeUser".to_string(),
-                        ClassDef {
-                            id: "test_relative_import.subpackage.relative_import.RelativeUser"
+        assert_eq!(
+            class_defs,
+            &HashMap::from([
+                (
+                    "test_relative_import.base_model.BaseModel".to_string(),
+                    ClassDef {
+                        id: "test_relative_import.base_model.BaseModel".to_string(),
+                        name: "BaseModel".to_string(),
+                        module_path: root_module_path.join("base_model.py"),
+                        stmt_class_def: dummy_stmt_class_def.clone(),
+                        parent_ids: vec!["pandera.DataFrameModel".to_string()]
+                    }
+                ),
+                (
+                    "test_relative_import.relative.child_model.ChildModel".to_string(),
+                    ClassDef {
+                        id: "test_relative_import.relative.child_model.ChildModel".to_string(),
+                        name: "ChildModel".to_string(),
+                        module_path: root_module_path.join("relative/child_model.py"),
+                        parent_ids: vec!["test_relative_import.base_model.BaseModel".to_string()],
+                        stmt_class_def: dummy_stmt_class_def.clone()
+                    }
+                ),
+                (
+                    "test_relative_import.relative.nested.grandchild_model.GrandchildModel"
+                        .to_string(),
+                    ClassDef {
+                        id: "test_relative_import.relative.nested.grandchild_model.GrandchildModel"
+                            .to_string(),
+                        name: "GrandchildModel".to_string(),
+                        module_path: root_module_path.join("relative/nested/grandchild_model.py"),
+                        parent_ids: vec!["test_relative_import.base_model.BaseModel".to_string()],
+                        stmt_class_def: dummy_stmt_class_def.clone()
+                    }
+                ),
+                (
+                    "test_relative_import.relative.nested.grandchild_model.NestedChildModel"
+                        .to_string(),
+                    ClassDef {
+                        id:
+                            "test_relative_import.relative.nested.grandchild_model.NestedChildModel"
                                 .to_string(),
-                            name: "RelativeUser".to_string(),
-                            module_path: root_module_path.join("subpackage/relative_import.py"),
-                            parent_ids: vec!["base_model.BaseModel".to_string()],
-                            stmt_class_def: dummy_stmt_class_def.clone()
-                        }
-                    ),
-                    (
-                        "test_relative_import.base_model.BaseModel".to_string(),
-                        ClassDef {
-                            id: "test_relative_import.base_model.BaseModel".to_string(),
-                            name: "BaseModel".to_string(),
-                            module_path: root_module_path.join("base_model.py"),
-                            stmt_class_def: dummy_stmt_class_def.clone(),
-                            parent_ids: vec!["pandera.DataFrameModel".to_string()]
-                        }
-                    )
-                ])
+                        name: "NestedChildModel".to_string(),
+                        module_path: root_module_path.join("relative/nested/grandchild_model.py"),
+                        parent_ids: vec![
+                            "test_relative_import.relative.child_model.ChildModel".to_string()
+                        ],
+                        stmt_class_def: dummy_stmt_class_def.clone()
+                    }
+                )
+            ]),
+            "Class definitions should match expected structure"
         );
 
         // Check file_class_ids mapping
@@ -655,17 +695,29 @@ mod tests {
         // Define expected file_class_ids mapping
         let expected_file_class_ids: HashMap<PathBuf, Vec<String>> = HashMap::from([
             (
-                root_module_path.join("subpackage/relative_import.py"),
-                vec!["test_relative_import.subpackage.relative_import.RelativeUser".to_string()],
-            ),
-            (
                 root_module_path.join("base_model.py"),
                 vec!["test_relative_import.base_model.BaseModel".to_string()],
+            ),
+            (
+                root_module_path.join("relative/child_model.py"),
+                vec!["test_relative_import.relative.child_model.ChildModel".to_string()],
+            ),
+            (
+                root_module_path.join("relative/nested/grandchild_model.py"),
+                vec![
+                    "test_relative_import.relative.nested.grandchild_model.GrandchildModel"
+                        .to_string(),
+                    "test_relative_import.relative.nested.grandchild_model.NestedChildModel"
+                        .to_string(),
+                ],
             ),
         ]);
 
         // Compare entire maps
-        assert_eq!(file_class_ids, &expected_file_class_ids);
+        assert_eq!(
+            file_class_ids, &expected_file_class_ids,
+            "File class IDs mapping should match expected structure"
+        );
 
         Ok(())
     }
@@ -687,48 +739,50 @@ mod tests {
 
         // Check inheritance map
         let inheritance_map = visitor.get_inheritance_map();
-        assert!(
-            inheritance_map
-                == HashMap::from([
-                    (
-                        "test_inheritance.base_models.UserBase".to_string(),
-                        vec!["test_inheritance.base_models.BaseDataFrameModel".to_string()]
-                    ),
-                    (
-                        "test_inheritance.base_models.BaseDataFrameModel".to_string(),
-                        vec!["pandera.DataFrameModel".to_string()]
-                    )
-                ])
+        assert_eq!(
+            inheritance_map,
+            HashMap::from([
+                (
+                    "test_inheritance.base_models.UserBase".to_string(),
+                    vec!["test_inheritance.base_models.BaseDataFrameModel".to_string()]
+                ),
+                (
+                    "test_inheritance.base_models.BaseDataFrameModel".to_string(),
+                    vec!["pandera.DataFrameModel".to_string()]
+                )
+            ]),
+            "Inheritance map should match expected structure"
         );
 
         // Check class definitions
         let class_defs = visitor.get_class_defs();
-        assert!(
-            class_defs
-                == &HashMap::from([
-                    (
-                        "test_inheritance.base_models.UserBase".to_string(),
-                        ClassDef {
-                            id: "test_inheritance.base_models.UserBase".to_string(),
-                            name: "UserBase".to_string(),
-                            module_path: root_module_path.join("base_models.py"),
-                            parent_ids: vec![
-                                "test_inheritance.base_models.BaseDataFrameModel".to_string()
-                            ],
-                            stmt_class_def: dummy_stmt_class_def.clone()
-                        }
-                    ),
-                    (
-                        "test_inheritance.base_models.BaseDataFrameModel".to_string(),
-                        ClassDef {
-                            id: "test_inheritance.base_models.BaseDataFrameModel".to_string(),
-                            name: "BaseDataFrameModel".to_string(),
-                            module_path: root_module_path.join("base_models.py"),
-                            stmt_class_def: dummy_stmt_class_def.clone(),
-                            parent_ids: vec!["pandera.DataFrameModel".to_string()]
-                        }
-                    )
-                ])
+        assert_eq!(
+            class_defs,
+            &HashMap::from([
+                (
+                    "test_inheritance.base_models.UserBase".to_string(),
+                    ClassDef {
+                        id: "test_inheritance.base_models.UserBase".to_string(),
+                        name: "UserBase".to_string(),
+                        module_path: root_module_path.join("base_models.py"),
+                        parent_ids: vec![
+                            "test_inheritance.base_models.BaseDataFrameModel".to_string()
+                        ],
+                        stmt_class_def: dummy_stmt_class_def.clone()
+                    }
+                ),
+                (
+                    "test_inheritance.base_models.BaseDataFrameModel".to_string(),
+                    ClassDef {
+                        id: "test_inheritance.base_models.BaseDataFrameModel".to_string(),
+                        name: "BaseDataFrameModel".to_string(),
+                        module_path: root_module_path.join("base_models.py"),
+                        stmt_class_def: dummy_stmt_class_def.clone(),
+                        parent_ids: vec!["pandera.DataFrameModel".to_string()]
+                    }
+                )
+            ]),
+            "Class definitions should match expected structure"
         );
 
         // Check file_class_ids mapping
@@ -742,7 +796,10 @@ mod tests {
         )]);
 
         // Compare entire maps
-        assert_eq!(file_class_ids, &expected_file_class_ids);
+        assert_eq!(
+            file_class_ids, &expected_file_class_ids,
+            "File class IDs mapping should match expected structure"
+        );
 
         Ok(())
     }
@@ -765,66 +822,64 @@ mod tests {
 
         // Check inheritance map
         let inheritance_map = visitor.get_inheritance_map();
-        assert!(
-            inheritance_map
-                == HashMap::from([
-                    (
-                        "test_nested_inheritance.nested_model.User".to_string(),
-                        vec!["test_nested_inheritance.nested_model.BaseDataFrameModel".to_string()]
-                    ),
-                    (
-                        "test_nested_inheritance.nested_model.UserExtension".to_string(),
-                        vec!["test_nested_inheritance.nested_model.User".to_string()]
-                    ),
-                    (
-                        "test_nested_inheritance.nested_model.BaseDataFrameModel".to_string(),
-                        vec!["pandera.DataFrameModel".to_string()]
-                    )
-                ])
+        assert_eq!(
+            inheritance_map,
+            HashMap::from([
+                (
+                    "test_nested_inheritance.nested_model.User".to_string(),
+                    vec!["test_nested_inheritance.nested_model.BaseDataFrameModel".to_string()]
+                ),
+                (
+                    "test_nested_inheritance.nested_model.UserExtension".to_string(),
+                    vec!["test_nested_inheritance.nested_model.User".to_string()]
+                ),
+                (
+                    "test_nested_inheritance.nested_model.BaseDataFrameModel".to_string(),
+                    vec!["pandera.DataFrameModel".to_string()]
+                )
+            ]),
+            "Inheritance map should match expected structure"
         );
 
         // Check class definitions
         let class_defs = visitor.get_class_defs();
-        assert!(
-            class_defs
-                == &HashMap::from([
-                    (
-                        "test_nested_inheritance.nested_model.User".to_string(),
-                        ClassDef {
-                            id: "test_nested_inheritance.nested_model.User".to_string(),
-                            name: "User".to_string(),
-                            module_path: root_module_path.join("nested_model.py"),
-                            parent_ids: vec![
-                                "test_nested_inheritance.nested_model.BaseDataFrameModel"
-                                    .to_string()
-                            ],
-                            stmt_class_def: dummy_stmt_class_def.clone()
-                        }
-                    ),
-                    (
-                        "test_nested_inheritance.nested_model.UserExtension".to_string(),
-                        ClassDef {
-                            id: "test_nested_inheritance.nested_model.UserExtension".to_string(),
-                            name: "UserExtension".to_string(),
-                            module_path: root_module_path.join("nested_model.py"),
-                            parent_ids: vec![
-                                "test_nested_inheritance.nested_model.User".to_string()
-                            ],
-                            stmt_class_def: dummy_stmt_class_def.clone()
-                        }
-                    ),
-                    (
-                        "test_nested_inheritance.nested_model.BaseDataFrameModel".to_string(),
-                        ClassDef {
-                            id: "test_nested_inheritance.nested_model.BaseDataFrameModel"
-                                .to_string(),
-                            name: "BaseDataFrameModel".to_string(),
-                            module_path: root_module_path.join("nested_model.py"),
-                            stmt_class_def: dummy_stmt_class_def.clone(),
-                            parent_ids: vec!["pandera.DataFrameModel".to_string()]
-                        }
-                    )
-                ])
+        assert_eq!(
+            class_defs,
+            &HashMap::from([
+                (
+                    "test_nested_inheritance.nested_model.User".to_string(),
+                    ClassDef {
+                        id: "test_nested_inheritance.nested_model.User".to_string(),
+                        name: "User".to_string(),
+                        module_path: root_module_path.join("nested_model.py"),
+                        parent_ids: vec![
+                            "test_nested_inheritance.nested_model.BaseDataFrameModel".to_string()
+                        ],
+                        stmt_class_def: dummy_stmt_class_def.clone()
+                    }
+                ),
+                (
+                    "test_nested_inheritance.nested_model.UserExtension".to_string(),
+                    ClassDef {
+                        id: "test_nested_inheritance.nested_model.UserExtension".to_string(),
+                        name: "UserExtension".to_string(),
+                        module_path: root_module_path.join("nested_model.py"),
+                        parent_ids: vec!["test_nested_inheritance.nested_model.User".to_string()],
+                        stmt_class_def: dummy_stmt_class_def.clone()
+                    }
+                ),
+                (
+                    "test_nested_inheritance.nested_model.BaseDataFrameModel".to_string(),
+                    ClassDef {
+                        id: "test_nested_inheritance.nested_model.BaseDataFrameModel".to_string(),
+                        name: "BaseDataFrameModel".to_string(),
+                        module_path: root_module_path.join("nested_model.py"),
+                        stmt_class_def: dummy_stmt_class_def.clone(),
+                        parent_ids: vec!["pandera.DataFrameModel".to_string()]
+                    }
+                )
+            ]),
+            "Class definitions should match expected structure"
         );
 
         // Check file_class_ids mapping
@@ -837,7 +892,10 @@ mod tests {
                 "test_nested_inheritance.nested_model.UserExtension".to_string(),
             ],
         )]);
-        assert_eq!(file_class_ids, &expected_file_class_ids);
+        assert_eq!(
+            file_class_ids, &expected_file_class_ids,
+            "File class IDs mapping should match expected structure"
+        );
         Ok(())
     }
 
@@ -859,46 +917,48 @@ mod tests {
 
         // Check inheritance map
         let inheritance_map = visitor.get_inheritance_map();
-        assert!(
-            inheritance_map
-                == HashMap::from([
-                    (
-                        "test_alias_import.alias_import.AliasUser".to_string(),
-                        vec!["visitor.base_models.BaseDataFrameModel".to_string()]
-                    ),
-                    (
-                        "test_alias_import.base_models.BaseDataFrameModel".to_string(),
-                        vec!["pandera.DataFrameModel".to_string()]
-                    )
-                ])
+        assert_eq!(
+            inheritance_map,
+            HashMap::from([
+                (
+                    "test_alias_import.alias_import.AliasUser".to_string(),
+                    vec!["visitor.base_models.BaseDataFrameModel".to_string()]
+                ),
+                (
+                    "test_alias_import.base_models.BaseDataFrameModel".to_string(),
+                    vec!["pandera.DataFrameModel".to_string()]
+                )
+            ]),
+            "Inheritance map should match expected structure"
         );
 
         // Check class definitions
         let class_defs = visitor.get_class_defs();
-        assert!(
-            class_defs
-                == &HashMap::from([
-                    (
-                        "test_alias_import.alias_import.AliasUser".to_string(),
-                        ClassDef {
-                            id: "test_alias_import.alias_import.AliasUser".to_string(),
-                            name: "AliasUser".to_string(),
-                            module_path: root_module_path.join("alias_import.py"),
-                            parent_ids: vec!["visitor.base_models.BaseDataFrameModel".to_string()],
-                            stmt_class_def: dummy_stmt_class_def.clone()
-                        }
-                    ),
-                    (
-                        "test_alias_import.base_models.BaseDataFrameModel".to_string(),
-                        ClassDef {
-                            id: "test_alias_import.base_models.BaseDataFrameModel".to_string(),
-                            name: "BaseDataFrameModel".to_string(),
-                            module_path: root_module_path.join("base_models.py"),
-                            stmt_class_def: dummy_stmt_class_def.clone(),
-                            parent_ids: vec!["pandera.DataFrameModel".to_string()]
-                        }
-                    )
-                ])
+        assert_eq!(
+            class_defs,
+            &HashMap::from([
+                (
+                    "test_alias_import.alias_import.AliasUser".to_string(),
+                    ClassDef {
+                        id: "test_alias_import.alias_import.AliasUser".to_string(),
+                        name: "AliasUser".to_string(),
+                        module_path: root_module_path.join("alias_import.py"),
+                        parent_ids: vec!["visitor.base_models.BaseDataFrameModel".to_string()],
+                        stmt_class_def: dummy_stmt_class_def.clone()
+                    }
+                ),
+                (
+                    "test_alias_import.base_models.BaseDataFrameModel".to_string(),
+                    ClassDef {
+                        id: "test_alias_import.base_models.BaseDataFrameModel".to_string(),
+                        name: "BaseDataFrameModel".to_string(),
+                        module_path: root_module_path.join("base_models.py"),
+                        stmt_class_def: dummy_stmt_class_def.clone(),
+                        parent_ids: vec!["pandera.DataFrameModel".to_string()]
+                    }
+                )
+            ]),
+            "Class definitions should match expected structure"
         );
 
         // Check file_class_ids mapping
@@ -913,7 +973,10 @@ mod tests {
                 vec!["test_alias_import.base_models.BaseDataFrameModel".to_string()],
             ),
         ]);
-        assert!(file_class_ids == &expected_file_class_ids);
+        assert_eq!(
+            file_class_ids, &expected_file_class_ids,
+            "File class IDs mapping should match expected structure"
+        );
 
         Ok(())
     }
