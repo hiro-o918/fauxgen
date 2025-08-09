@@ -1,5 +1,5 @@
 import datetime
-from typing import Any, TypedDict, Optional
+from typing import Any, TypedDict
 
 import fauxgen as f
 
@@ -9,7 +9,7 @@ class ChildModelRecord(TypedDict):
     id: int
     name: str
     age: int
-    email: Optional[str]
+    email: str | None
 
 
 def child_model_record(
@@ -17,7 +17,7 @@ def child_model_record(
     id: int | f.Unset = f.UNSET,
     name: str | f.Unset = f.UNSET,
     age: int | f.Unset = f.UNSET,
-    email: Optional[str] | f.Unset = f.UNSET,
+    email: str | None | f.Unset = f.UNSET,
     seed_: int | None = None,
 ) -> ChildModelRecord:
     """Creates a mock ChildModel entry with randomized values.
@@ -29,7 +29,7 @@ def child_model_record(
         id (int): Field id
         name (str): Field name
         age (int): Field age
-        email (Optional[str]): Field email
+        email (str | None): Field email
         seed_ (int | None): Seed value for deterministic data generation.
                             The same seed will always produce the same values.
 

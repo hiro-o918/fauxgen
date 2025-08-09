@@ -5,7 +5,7 @@ import pandera as pa
 
 class ChildModel(BaseModel):
     age: Series[int] = pa.Field(ge=0, le=120)
-    email: Series[str] = pa.Field(nullable=True)
+    email: Series[str | None] = pa.Field(nullable=True)
 
     class Config:
         name = "child_model"

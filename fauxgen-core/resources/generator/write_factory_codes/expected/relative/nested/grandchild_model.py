@@ -1,5 +1,5 @@
 import datetime
-from typing import Any, TypedDict, Optional
+from typing import Any, TypedDict
 
 import fauxgen as f
 
@@ -39,8 +39,8 @@ def grandchild_model_record(
     return {
         "id": f.Unset.unwrap_or_else(id, lambda: f.gen_int(ge=0, le=100, seed=seed_)),
         "name": f.Unset.unwrap_or_else(name, lambda: f.gen_string(min_length=5, max_length=10, seed=seed_)),
-        "gender": f.Unset.unwrap_or_else(gender, lambda: f.gen_enum(["male", "female", "other"], seed=seed_)),
-        "score": f.Unset.unwrap_or_else(score, lambda: f.gen_float(ge=0.0, le=100.0, seed=seed_)),
+        "gender": f.Unset.unwrap_or_else(gender, lambda: f.gen_string(min_length=5, max_length=10, seed=seed_)),
+        "score": f.Unset.unwrap_or_else(score, lambda: f.gen_float(ge=0, le=100, seed=seed_)),
     }
 
 
@@ -49,9 +49,9 @@ class NestedChildModelRecord(TypedDict):
     id: int
     name: str
     age: int
-    email: Optional[str]
+    email: str | None
     status: str
-    last_login: Optional[str]
+    last_login: str | None
 
 
 def nested_child_model_record(
@@ -59,9 +59,9 @@ def nested_child_model_record(
     id: int | f.Unset = f.UNSET,
     name: str | f.Unset = f.UNSET,
     age: int | f.Unset = f.UNSET,
-    email: Optional[str] | f.Unset = f.UNSET,
+    email: str | None | f.Unset = f.UNSET,
     status: str | f.Unset = f.UNSET,
-    last_login: Optional[str] | f.Unset = f.UNSET,
+    last_login: str | None | f.Unset = f.UNSET,
     seed_: int | None = None,
 ) -> NestedChildModelRecord:
     """Creates a mock NestedChildModel entry with randomized values.
@@ -73,9 +73,9 @@ def nested_child_model_record(
         id (int): Field id
         name (str): Field name
         age (int): Field age
-        email (Optional[str]): Field email
+        email (str | None): Field email
         status (str): Field status
-        last_login (Optional[str]): Field last_login
+        last_login (str | None): Field last_login
         seed_ (int | None): Seed value for deterministic data generation.
                             The same seed will always produce the same values.
 
@@ -86,9 +86,7 @@ def nested_child_model_record(
         "id": f.Unset.unwrap_or_else(id, lambda: f.gen_int(ge=0, le=100, seed=seed_)),
         "name": f.Unset.unwrap_or_else(name, lambda: f.gen_string(min_length=5, max_length=10, seed=seed_)),
         "age": f.Unset.unwrap_or_else(age, lambda: f.gen_int(ge=0, le=120, seed=seed_)),
-        "email": f.Unset.unwrap_or_else(email, lambda: f.gen_optional(
-            lambda: f.gen_string(seed=seed_), probability=0.7, seed=seed_)),
-        "status": f.Unset.unwrap_or_else(status, lambda: f.gen_enum(["active", "inactive", "pending"], seed=seed_)),
-        "last_login": f.Unset.unwrap_or_else(last_login, lambda: f.gen_optional(
-            lambda: f.gen_datetime_str(seed=seed_), probability=0.7, seed=seed_)),
+        "email": f.Unset.unwrap_or_else(email, lambda: f.gen_string(min_length=5, max_length=10, seed=seed_)),
+        "status": f.Unset.unwrap_or_else(status, lambda: f.gen_string(min_length=5, max_length=10, seed=seed_)),
+        "last_login": f.Unset.unwrap_or_else(last_login, lambda: f.gen_string(min_length=5, max_length=10, seed=seed_)),
     }

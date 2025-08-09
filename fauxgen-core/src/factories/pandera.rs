@@ -85,7 +85,7 @@ impl PanderaHandler {
             .clone();
         let all_class_defs = generic_class_defs
             .into_iter()
-            .chain(pandas_class_defs.into_iter())
+            .chain(pandas_class_defs)
             .chain(vec![this_class_def])
             .collect::<Vec<_>>();
         debug!(

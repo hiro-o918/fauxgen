@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::Debug,
     path::{Path, PathBuf},
 };
@@ -64,13 +64,12 @@ impl FileImports {
     ) {
         if let Some(module) = &import_from_stmt.module {
             let module_str = module.to_string();
-
             // Check if this is a relative import
-            let module_path = if module_str.starts_with('.') {
-                // Resolve the relative import
-                self.resolve_relative_import(&module_str, current_module_path)
-            } else {
-                module_str
+            let module_path = match import_from_stmt.level {
+                Some(level) if level.to_u32() > 0 => {
+                    self.resolve_relative_import(&module_str, current_module_path, level.to_u32())
+                }
+                _ => module_str,
             };
 
             for alias in &import_from_stmt.names {
@@ -95,36 +94,28 @@ impl FileImports {
     }
 
     /// Resolve a relative import to an absolute module path
-    fn resolve_relative_import(&self, relative_path: &str, current_module_path: &Path) -> String {
-        // ドットの数をカウント
-        let dot_count = relative_path.chars().take_while(|&c| c == '.').count();
-
-        // 現在のディレクトリを取得
+    /// Returns the fully qualified module path including the root module name
+    fn resolve_relative_import(
+        &self,
+        relative_path: &str,
+        current_module_path: &Path,
+        level: u32,
+    ) -> String {
         let mut current_dir = current_module_path
             .parent()
             .unwrap_or(current_module_path)
             .to_path_buf();
 
-        // ドットの数-1の分だけ親ディレクトリに遡る
-        for _ in 1..dot_count {
+        for _ in 1..level {
             current_dir = current_dir.parent().unwrap_or(&current_dir).to_path_buf();
         }
 
-        // 残りのパスを取得して処理
-        let remaining = &relative_path[dot_count..];
-
-        // ターゲットパスを構築
-        let target_path = if remaining.is_empty() {
-            // 残りのパスがない場合は現在のディレクトリを使用
-            current_dir
-        } else {
-            // ドット表記をパス区切りに変換して結合
-            current_dir.join(remaining.replace('.', "/"))
-        };
-
-        // 相対パスの解決後、モジュール名として適切な形式に変換する
-        // target_pathはファイルシステム上のパスなので、Pythonのモジュールパスに変換する
-        // path_to_module_name関数はパスをモジュール名に変換する
+        let target_path = current_dir.join(relative_path.replace('.', "/"));
+        debug!(
+            "Resolving relative import: {} -> {}",
+            relative_path,
+            target_path.display()
+        );
         self.path_to_module_name(&target_path)
     }
 
@@ -534,40 +525,115 @@ impl ClassVisitor {
         }
 
         // Make a copy of the class definition and parent IDs to avoid borrowing self
-        let class_def_clone_opt = self.class_defs.get(target_class_id).cloned();
+        let Some(class_def) = self.class_defs.get(target_class_id).cloned() else {
+            // If the class definition does not exist, return empty vector
+            debug!("Class {} not found in class definitions", target_class_id);
+            return result;
+        };
 
-        if let Some(class_def) = class_def_clone_opt {
-            // Check if the target class directly inherits from the base class
-            if class_def
-                .parent_ids
-                .iter()
-                .any(|parent_id| parent_id == base_class)
-            {
-                // Direct inheritance found
-                result.push(class_def.clone());
-            }
+        // Check if target_class inherits from base_class
+        let mut visited = HashSet::new();
+        if self.inherits_from(target_class_id, base_class, &mut visited) {
+            // If it does, add it to the result
+            result.push(class_def);
 
-            // Clone the parent_ids to avoid borrow issues
-            let parent_ids = class_def.parent_ids.clone();
-
-            // Check for indirect inheritance through parents
-            for parent_id in &parent_ids {
-                // Recursively check each parent
-                let mut parent_results = self.get_class_defs_of_base(parent_id, base_class);
-                result.append(&mut parent_results);
-            }
-            debug!(
-                "Class {} inherits from base class {}: {}",
+            // Also find all parent classes in the inheritance path that lead to base_class
+            // and add them to the result
+            self.add_parent_classes_in_path(
                 target_class_id,
                 base_class,
-                !result.is_empty()
+                &mut result,
+                &mut HashSet::new(),
             );
         }
 
-        // Cache the empty result
+        debug!(
+            "Class {} inherits from base class {}: {}",
+            target_class_id,
+            base_class,
+            !result.is_empty()
+        );
+        let result = result.into_iter().rev().collect::<Vec<_>>();
+        // Cache the result
         self.base_classes_cache
             .insert(target_class_id.clone(), result.clone());
         result
+    }
+
+    // Add all parent classes in the inheritance path from target to base
+    fn add_parent_classes_in_path(
+        &self,
+        current_id: &ClassID,
+        base_class: &ClassID,
+        result: &mut Vec<ClassDef>,
+        visited: &mut HashSet<ClassID>,
+    ) {
+        // Check if we've already visited this class
+        if !visited.insert(current_id.clone()) {
+            return;
+        }
+
+        // Get the class definition
+        let Some(class_def) = self.class_defs.get(current_id) else {
+            return;
+        };
+
+        // Check each parent
+        for parent_id in &class_def.parent_ids {
+            // Skip if this is the base class itself
+            if parent_id == base_class {
+                continue;
+            }
+
+            // Check if this parent inherits from the base class
+            let mut parent_visited = std::collections::HashSet::new();
+            if self.inherits_from(parent_id, base_class, &mut parent_visited) {
+                // Add this parent to the result if not already present
+                if let Some(parent_def) = self.class_defs.get(parent_id) {
+                    result.push(parent_def.clone());
+                } else {
+                    debug!("Parent class {} not found in class definitions", parent_id);
+                }
+
+                // Recursively add its parents
+                self.add_parent_classes_in_path(parent_id, base_class, result, visited);
+            }
+        }
+    }
+
+    // Helper method to check if a class inherits from another class
+    fn inherits_from(
+        &self,
+        class_id: &ClassID,
+        ancestor_id: &ClassID,
+        visited: &mut std::collections::HashSet<ClassID>,
+    ) -> bool {
+        // Check if we've already visited this class (to prevent cycles)
+        if !visited.insert(class_id.clone()) {
+            return false;
+        }
+
+        // Get the class definition
+        let Some(class_def) = self.class_defs.get(class_id) else {
+            visited.remove(class_id);
+            return false;
+        };
+
+        // Check if this class directly inherits from the ancestor
+        if class_def.parent_ids.contains(ancestor_id) {
+            return true;
+        }
+
+        // Recursively check parent classes
+        for parent_id in &class_def.parent_ids {
+            if self.inherits_from(parent_id, ancestor_id, visited) {
+                return true;
+            }
+        }
+
+        // If we get here, no inheritance path was found
+        visited.remove(class_id);
+        false
     }
 }
 
@@ -577,6 +643,10 @@ mod tests {
     use anyhow::Result;
     use rstest::{fixture, rstest};
     use std::path::PathBuf;
+
+    fn init() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
 
     #[fixture]
     fn dummy_stmt_class_def() -> StmtClassDef<TextRange> {
@@ -596,6 +666,7 @@ mod tests {
     fn test_visitor_tracks_relative_imports(
         dummy_stmt_class_def: StmtClassDef<TextRange>,
     ) -> Result<()> {
+        init();
         // Get the absolute path to the resources directory
         let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let root_module_path = project_root.join("resources/visitor/test_relative_import");
@@ -617,17 +688,17 @@ mod tests {
                 ),
                 (
                     "test_relative_import.relative.child_model.ChildModel".to_string(),
-                    vec!["base_model.BaseModel".to_string()]
+                    vec!["test_relative_import.base_model.BaseModel".to_string()]
                 ),
                 (
                     "test_relative_import.relative.nested.grandchild_model.GrandchildModel"
                         .to_string(),
-                    vec!["base_model.BaseModel".to_string()]
+                    vec!["test_relative_import.base_model.BaseModel".to_string()]
                 ),
                 (
                     "test_relative_import.relative.nested.grandchild_model.NestedChildModel"
                         .to_string(),
-                    vec!["child_model.ChildModel".to_string()]
+                    vec!["test_relative_import.relative.child_model.ChildModel".to_string()]
                 )
             ]),
             "Inheritance map should match expected structure"
@@ -727,6 +798,7 @@ mod tests {
     fn test_visitor_tracks_class_definitions(
         dummy_stmt_class_def: StmtClassDef<TextRange>,
     ) -> Result<()> {
+        init();
         // Get the absolute path to the resources directory
         let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let root_module_path = project_root.join("resources/visitor/test_inheritance");
@@ -809,6 +881,7 @@ mod tests {
     fn test_visitor_tracks_nested_inheritance(
         dummy_stmt_class_def: StmtClassDef<TextRange>,
     ) -> Result<()> {
+        init();
         // Get the absolute path to the resources directory
         let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let root_module_path = project_root.join("resources/visitor/test_nested_inheritance");
@@ -904,6 +977,7 @@ mod tests {
     fn test_visitor_tracks_alias_imports(
         dummy_stmt_class_def: StmtClassDef<TextRange>,
     ) -> Result<()> {
+        init();
         // Get the absolute path to the resources directory
         let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let root_module_path = project_root.join("resources/visitor/test_alias_import");
