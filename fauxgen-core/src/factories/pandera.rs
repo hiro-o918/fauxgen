@@ -78,7 +78,7 @@ impl PanderaHandler {
         let generic_class_defs =
             visitor.get_class_defs_of_base(class_id, &"pandera.DataFrameModel".to_string());
         let pandas_class_defs =
-            visitor.get_class_defs_of_base(class_id, &"pandera.pandas.DataFrame".to_string());
+            visitor.get_class_defs_of_base(class_id, &"pandera.pandas.DataFrameModel".to_string());
         if generic_class_defs.is_empty() && pandas_class_defs.is_empty() {
             debug!(
                 "No pandera DataFrameModel or pandas DataFrame found for class {}",
