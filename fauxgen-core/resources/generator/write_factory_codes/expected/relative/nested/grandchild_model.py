@@ -1,0 +1,92 @@
+import datetime
+from typing import Any, TypedDict
+
+import fauxgen as f
+
+
+class GrandchildModelRecord(TypedDict):
+    """A data structure representing GrandchildModel entries."""
+    id: int
+    name: str
+    gender: str
+    score: float
+
+
+def grandchild_model_record(
+    *,
+    id: int | f.Unset = f.UNSET,
+    name: str | f.Unset = f.UNSET,
+    gender: str | f.Unset = f.UNSET,
+    score: float | f.Unset = f.UNSET,
+    seed_: int | None = None,
+) -> GrandchildModelRecord:
+    """Creates a mock GrandchildModel entry with randomized values.
+
+    Each field is generated with appropriate constraints and validation rules.
+    Values can be overridden by providing specific field values.
+
+    Args:
+        id (int): Field id
+        name (str): Field name
+        gender (str): Field gender
+        score (float): Field score
+        seed_ (int | None): Seed value for deterministic data generation.
+                            The same seed will always produce the same values.
+
+    Returns:
+        GrandchildModelRecord: A new mock entry with generated data.
+    """
+    return {
+        "id": f.Unset.unwrap_or_else(id, lambda: f.gen_int(ge=0, le=100, seed=seed_)),
+        "name": f.Unset.unwrap_or_else(name, lambda: f.gen_string(min_length=5, max_length=10, seed=seed_)),
+        "gender": f.Unset.unwrap_or_else(gender, lambda: f.gen_string(min_length=5, max_length=10, seed=seed_)),
+        "score": f.Unset.unwrap_or_else(score, lambda: f.gen_float(ge=0, le=100, seed=seed_)),
+    }
+
+
+class NestedChildModelRecord(TypedDict):
+    """A data structure representing NestedChildModel entries."""
+    id: int
+    name: str
+    age: int
+    email: str | None
+    status: str
+    last_login: str | None
+
+
+def nested_child_model_record(
+    *,
+    id: int | f.Unset = f.UNSET,
+    name: str | f.Unset = f.UNSET,
+    age: int | f.Unset = f.UNSET,
+    email: str | None | f.Unset = f.UNSET,
+    status: str | f.Unset = f.UNSET,
+    last_login: str | None | f.Unset = f.UNSET,
+    seed_: int | None = None,
+) -> NestedChildModelRecord:
+    """Creates a mock NestedChildModel entry with randomized values.
+
+    Each field is generated with appropriate constraints and validation rules.
+    Values can be overridden by providing specific field values.
+
+    Args:
+        id (int): Field id
+        name (str): Field name
+        age (int): Field age
+        email (str | None): Field email
+        status (str): Field status
+        last_login (str | None): Field last_login
+        seed_ (int | None): Seed value for deterministic data generation.
+                            The same seed will always produce the same values.
+
+    Returns:
+        NestedChildModelRecord: A new mock entry with generated data.
+    """
+    return {
+        "id": f.Unset.unwrap_or_else(id, lambda: f.gen_int(ge=0, le=100, seed=seed_)),
+        "name": f.Unset.unwrap_or_else(name, lambda: f.gen_string(min_length=5, max_length=10, seed=seed_)),
+        "age": f.Unset.unwrap_or_else(age, lambda: f.gen_int(ge=0, le=120, seed=seed_)),
+        "email": f.Unset.unwrap_or_else(email, lambda: f.gen_string(min_length=5, max_length=10, seed=seed_)),
+        "status": f.Unset.unwrap_or_else(status, lambda: f.gen_string(min_length=5, max_length=10, seed=seed_)),
+        "last_login": f.Unset.unwrap_or_else(last_login, lambda: f.gen_string(min_length=5, max_length=10, seed=seed_)),
+    }

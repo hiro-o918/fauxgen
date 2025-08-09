@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 use fauxgen_core::generator::write_factory_codes;
+use log::{error, info};
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)] // requires `derive` feature
@@ -26,6 +27,7 @@ enum Commands {
 
 fn main() {
     let args = Cli::parse();
+    env_logger::init();
 
     match args.command {
         Commands::Gen {
@@ -33,7 +35,7 @@ fn main() {
             output_dir,
         } => {
             if !module_dir.exists() {
-                eprintln!("module dir does not exist: {}", module_dir.display());
+                error!("module dir does not exist: {}", module_dir.display());
                 std::process::exit(1);
             }
             let output_dir = output_dir.unwrap_or_else(|| {
@@ -41,7 +43,7 @@ fn main() {
                 // Create the testing directory if it doesn't exist
                 if !testing_path.exists() {
                     std::fs::create_dir_all(&testing_path).unwrap_or_else(|_| {
-                        eprintln!(
+                        error!(
                             "Failed to create testing directory: {}",
                             testing_path.display()
                         );
@@ -51,7 +53,7 @@ fn main() {
                 let init_path = testing_path.join("__init__.py");
                 if !init_path.exists() {
                     std::fs::write(&init_path, "").unwrap_or_else(|_| {
-                        eprintln!("Failed to create __init__.py file: {}", init_path.display());
+                        error!("Failed to create __init__.py file: {}", init_path.display());
                         std::process::exit(1);
                     });
                 }
@@ -59,10 +61,10 @@ fn main() {
                 testing_path.join("fauxgen")
             });
             if let Err(e) = write_factory_codes(&module_dir, &output_dir) {
-                eprintln!("Error generating factory codes: {}", e);
+                error!("Error generating factory codes: {}", e);
                 std::process::exit(1);
             }
-            println!(
+            info!(
                 "Factory codes generated successfully in {}",
                 output_dir.display()
             );

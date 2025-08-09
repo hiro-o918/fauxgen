@@ -1,8 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use crate::factories::pandera::PanderaHandler;
+use crate::visitor::ClassVisitor;
 use anyhow::{Context, Result};
-use rustpython_parser::{ast, Parse};
+use log::error;
 
 fn walk_dir(dir: &Path, suffix: &str) -> Result<Vec<PathBuf>> {
     let mut files = vec![];
@@ -18,38 +19,111 @@ fn walk_dir(dir: &Path, suffix: &str) -> Result<Vec<PathBuf>> {
     Ok(files)
 }
 
-fn render_factory_code<R: std::fmt::Debug>(stmt: &ast::Stmt<R>) -> Result<Option<String>> {
-    match stmt {
-        ast::Stmt::ClassDef(class_def) => {
-            PanderaHandler::new().generate_pandera_dataframe_factory(class_def)
-        }
-        _ => Ok(None),
-    }
+/// A generator for factory methods
+///
+/// This struct holds a PanderaHandler and a ClassVisitor, and provides functionality
+/// for generating factory methods for pandera DataFrameModel classes.
+pub struct Generator {
+    pandera_handler: PanderaHandler,
+    visitor: ClassVisitor,
+    module_dir: PathBuf,
 }
 
-pub fn render_factory_code_from_file(file: &Path) -> Result<Option<String>> {
-    let content = std::fs::read_to_string(file)?;
-    let suite = ast::Suite::parse(&content, file.to_str().unwrap())?;
-    let factory_codes: Vec<String> = suite
-        .iter()
-        .map(render_factory_code)
-        .collect::<Result<Vec<Option<String>>>>()?
-        .into_iter()
-        .flatten()
-        .collect();
-    if factory_codes.is_empty() {
-        return Ok(None);
+impl Generator {
+    /// Create a new Generator with the given module directory path
+    pub fn new(module_dir: PathBuf) -> Self {
+        Self {
+            pandera_handler: PanderaHandler::new(),
+            visitor: ClassVisitor::new(module_dir.clone()),
+            module_dir,
+        }
     }
-    let import_statements = r#"import datetime
+
+    /// Generate factory code for a statement
+    fn render_factory_code(&mut self, file_path: &Path) -> Result<Option<String>> {
+        let class_ids = match self.visitor.get_class_ids_for_file(file_path) {
+            Some(ids) => ids.clone(), // Clone to gain ownership
+            None => return Ok(None),
+        };
+
+        // Generate factory code from multiple classes and concatenate results
+        let mut factory_codes = Vec::new();
+        for class_id in class_ids {
+            let Some(code) = self
+                .pandera_handler
+                .generate_pandera_dataframe_factory(&class_id, &mut self.visitor)?
+            else {
+                continue;
+            };
+            factory_codes.push(code);
+        }
+
+        // Return None if the vector is empty
+        if factory_codes.is_empty() {
+            return Ok(None);
+        }
+
+        // Concatenate results and return
+        let combined_code = factory_codes.into_iter().collect::<Vec<_>>().join("\n\n");
+
+        Ok(Some(combined_code))
+    }
+
+    pub fn render_factory_code_from_file(&mut self, file: &Path) -> Result<Option<String>> {
+        let factory_code = match self.render_factory_code(file)? {
+            Some(code) => code,
+            None => return Ok(None),
+        };
+
+        let import_statements = r#"import datetime
 from typing import Any, TypedDict
 
 import fauxgen as f
 
 
 "#;
-    Ok(Some(
-        import_statements.to_string() + &factory_codes.join("\n"),
-    ))
+        Ok(Some(import_statements.to_string() + &factory_code))
+    }
+
+    pub fn process_module(&mut self) -> Result<()> {
+        // Process the module to collect class definitions and inheritance information
+        self.visitor.process_module(&self.module_dir)?;
+        Ok(())
+    }
+
+    /// Generate factory code for all files in a module and write to output directory
+    fn write_factory_codes(&mut self, output_dir: &Path) -> Result<()> {
+        // First process the module to collect class definitions and inheritance information
+        self.process_module()?;
+
+        let files = walk_dir(&self.module_dir, "py")?;
+        for file in files {
+            let factory_code = match self.render_factory_code_from_file(&file) {
+                Ok(Some(code)) => code,
+                // If the file does not contain a class definition, we skip it
+                Ok(None) => {
+                    continue;
+                }
+                // If there is an error, we log it and continue
+                Err(e) => {
+                    error!(
+                        "Error rendering factory code from file {}: {}",
+                        file.display(),
+                        e
+                    );
+                    continue;
+                }
+            };
+            let relative_path = file.strip_prefix(&self.module_dir)?.to_path_buf();
+            let factory_file = output_dir.join(relative_path).with_extension("py");
+
+            if let Some(parent) = factory_file.parent() {
+                create_dir_all_with_init(output_dir, parent)?;
+            }
+            std::fs::write(factory_file, factory_code)?;
+        }
+        Ok(())
+    }
 }
 
 fn create_dir_all_with_init(from: &Path, target: &Path) -> Result<()> {
@@ -83,81 +157,19 @@ fn create_dir_all_with_init(from: &Path, target: &Path) -> Result<()> {
 }
 
 pub fn write_factory_codes(module_dir: &Path, output_dir: &Path) -> Result<()> {
-    let files = walk_dir(module_dir, "py")?;
-    for file in files {
-        let factory_code = match render_factory_code_from_file(&file) {
-            Ok(Some(code)) => code,
-            // If the file does not contain a class definition, we skip it
-            Ok(None) => {
-                continue;
-            }
-            // If there is an error, we log it and continue
-            Err(e) => {
-                eprintln!(
-                    "Error rendering factory code from file {}: {}",
-                    file.display(),
-                    e
-                );
-                continue;
-            }
-        };
-        let relative_path = file.strip_prefix(module_dir)?.to_path_buf();
-        let factory_file = output_dir.join(relative_path).with_extension("py");
-
-        if let Some(parent) = factory_file.parent() {
-            create_dir_all_with_init(output_dir, parent)?;
-        }
-        std::fs::write(factory_file, factory_code)?;
-    }
-    Ok(())
+    let mut generator = Generator::new(module_dir.into());
+    generator.write_factory_codes(output_dir)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
-    use rstest::rstest;
+    use rstest::{fixture, rstest};
     use tempfile::TempDir;
 
-    #[rstest]
-    #[case("pandera_all_fields_input.py", "pandera_all_fields_expected.py")]
-    #[case(
-        "pandera_field_parameters_input.py",
-        "pandera_field_parameters_expected.py"
-    )]
-    fn test_render_factory_code_from_file_should_generate_pandera_record_factory(
-        #[case] input_file: &str,
-        #[case] expected_file: &str,
-    ) {
-        let module_dir = PathBuf::from("./resources/generator/render_factory_code_from_file");
-        let file = module_dir.join(input_file);
-        let result = render_factory_code_from_file(&file);
-        assert!(
-            result.is_ok(),
-            "Failed to render factory code from file: {:?}",
-            result.err()
-        );
-        let actual_factory_code = result.unwrap();
-        let expected_factory_code =
-            std::fs::read_to_string(module_dir.join(expected_file)).unwrap();
-        assert_eq!(actual_factory_code, Some(expected_factory_code));
-    }
-
-    #[rstest]
-    #[case("no_render_code.py")]
-    fn test_render_factory_code_from_file_should_none_when_target_class_not_found(
-        #[case] input_file: &str,
-    ) {
-        let module_dir = PathBuf::from("./resources/generator/render_factory_code_from_file");
-        let file = module_dir.join(input_file);
-        let result = render_factory_code_from_file(&file);
-        assert!(
-            result.is_ok(),
-            "Failed to render factory code from file: {:?}",
-            result.err()
-        );
-        let actual_factory_code = result.unwrap();
-        assert_eq!(actual_factory_code, None);
+    fn init() {
+        let _ = env_logger::builder().is_test(true).try_init();
     }
 
     fn get_all_files(dir: &Path) -> Result<Vec<PathBuf>> {
@@ -174,13 +186,68 @@ mod tests {
         Ok(files)
     }
 
-    #[test]
+    #[fixture]
+    fn generator_for_render_factory_code_from_file() -> Generator {
+        let module_dir = PathBuf::from("./resources/generator/render_factory_code_from_file/input");
+        let mut generator = Generator::new(module_dir.clone());
+        generator.process_module().unwrap();
+        generator
+    }
+
+    #[rstest]
+    #[case("pandera_all_fields_input.py", "pandera_all_fields_expected.py")]
+    #[case(
+        "pandera_field_parameters_input.py",
+        "pandera_field_parameters_expected.py"
+    )]
+    fn test_render_factory_code_from_file_should_generate_pandera_record_factory(
+        #[case] input_file: &str,
+        #[case] expected_file: &str,
+        #[from(generator_for_render_factory_code_from_file)] mut generator: Generator,
+    ) {
+        let input_dir = PathBuf::from("./resources/generator/render_factory_code_from_file/input");
+        let expected_dir =
+            PathBuf::from("./resources/generator/render_factory_code_from_file/expected");
+        let file = input_dir.join(input_file);
+        let result = generator.render_factory_code_from_file(&file);
+        assert!(
+            result.is_ok(),
+            "Failed to render factory code from file: {:?}",
+            result.err()
+        );
+        let actual_factory_code = result.unwrap();
+        let expected_factory_code =
+            std::fs::read_to_string(expected_dir.join(expected_file)).unwrap();
+        assert_eq!(actual_factory_code, Some(expected_factory_code));
+    }
+
+    #[rstest]
+    #[case("no_render_code.py")]
+    fn test_render_factory_code_from_file_should_none_when_target_class_not_found(
+        #[case] input_file: &str,
+        #[from(generator_for_render_factory_code_from_file)] mut generator: Generator,
+    ) {
+        let module_dir = PathBuf::from("./resources/generator/render_factory_code_from_file");
+        let file = module_dir.join(input_file);
+        let result = generator.render_factory_code_from_file(&file);
+        assert!(
+            result.is_ok(),
+            "Failed to render factory code from file: {:?}",
+            result.err()
+        );
+        let actual_factory_code = result.unwrap();
+        assert_eq!(actual_factory_code, None);
+    }
+
+    #[rstest]
     fn test_write_factory_codes() {
+        init();
         let module_dir = PathBuf::from("./resources/generator/write_factory_codes/input");
         let output_dir = TempDir::new().unwrap().path().to_path_buf();
         let expected_dir = PathBuf::from("./resources/generator/write_factory_codes/expected");
 
-        write_factory_codes(&module_dir, &output_dir).unwrap();
+        let mut generator = Generator::new(module_dir.clone());
+        generator.write_factory_codes(&output_dir).unwrap();
 
         // Get all files from both directories
         let mut actual_files = get_all_files(&output_dir).unwrap();
