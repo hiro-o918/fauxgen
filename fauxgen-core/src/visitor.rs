@@ -1054,4 +1054,63 @@ mod tests {
 
         Ok(())
     }
+
+    #[rstest]
+    #[test]
+    fn test_visitor_tracks_nested_imports(
+        dummy_stmt_class_def: StmtClassDef<TextRange>,
+    ) -> Result<()> {
+        init();
+        // Get the absolute path to the resources directory
+        let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let root_module_path = project_root.join("resources/visitor/test_new_import");
+        debug!("Root module path: {}", root_module_path.display());
+
+        // Setup visitor with the test resources directory
+        let mut visitor = ClassVisitor::new(root_module_path.clone());
+
+        // Process the entire module
+        visitor.process_module(&root_module_path)?;
+
+        // Check inheritance map
+        let inheritance_map = visitor.get_inheritance_map();
+        assert_eq!(
+            inheritance_map,
+            HashMap::from([(
+                "test_new_import.pandas.PandasModel".to_string(),
+                vec!["pandera.pandas.DataFrameModel".to_string()]
+            )]),
+            "Inheritance map should match expected structure"
+        );
+
+        // Check class definitions
+        let class_defs = visitor.get_class_defs();
+        assert_eq!(
+            class_defs,
+            &HashMap::from([(
+                "test_new_import.pandas.PandasModel".to_string(),
+                ClassDef {
+                    id: "test_new_import.pandas.PandasModel".to_string(),
+                    name: "PandasModel".to_string(),
+                    module_path: root_module_path.join("pandas.py"),
+                    stmt_class_def: dummy_stmt_class_def.clone(),
+                    parent_ids: vec!["pandera.pandas.DataFrameModel".to_string()]
+                }
+            )]),
+            "Class definitions should match expected structure"
+        );
+
+        // Check file_class_ids mapping
+        let file_class_ids = visitor.get_file_class_ids();
+        let expected_file_class_ids: HashMap<PathBuf, Vec<String>> = HashMap::from([(
+            root_module_path.join("pandas.py"),
+            vec!["test_new_import.pandas.PandasModel".to_string()],
+        )]);
+        assert_eq!(
+            file_class_ids, &expected_file_class_ids,
+            "File class IDs mapping should match expected structure"
+        );
+
+        Ok(())
+    }
 }
