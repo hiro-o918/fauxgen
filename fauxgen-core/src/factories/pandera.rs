@@ -4,22 +4,31 @@ use crate::{
         FieldTypeFloat, FieldTypeInt, FieldTypeString,
     },
     strings,
+    visitor::{ClassDef, ClassID, ClassIDExt, ClassVisitor},
 };
 use anyhow::{Ok, Result};
 use askama::Template;
-use rustpython_parser::ast::{
-    ExprAttribute, ExprCall, ExprName, ExprSubscript, StmtAnnAssign, StmtClassDef,
+use rustpython_parser::{
+    ast::{ExprAttribute, ExprCall, ExprName, ExprSubscript, StmtAnnAssign},
+    text_size::TextRange,
 };
-use std::fmt::Debug;
+use std::collections::{HashMap, HashSet};
 
-pub struct PanderaHandler<R: Debug> {
-    _phantom: std::marker::PhantomData<R>,
+#[derive(Clone)]
+struct ParsedPanderaClass {
+    class_name: String,
+    fields: Vec<Field>,
+}
+
+pub struct PanderaHandler {
+    _phantom: std::marker::PhantomData<TextRange>,
     int_type_regex: regex::Regex,
     float_type_regex: regex::Regex,
     bool_type_regex: regex::Regex,
     string_type_regex: regex::Regex,
     date_type_regex: regex::Regex,
     datetime_type_regex: regex::Regex,
+    parsed_pandera_cache: HashMap<ClassID, ParsedPanderaClass>,
 }
 
 #[derive(Default)]
@@ -39,12 +48,13 @@ struct PanderaFactoryTemplate<'a> {
     fields: Vec<Field>,
 }
 
-impl<R: Debug> Default for PanderaHandler<R> {
+impl Default for PanderaHandler {
     fn default() -> Self {
         Self::new()
     }
 }
-impl<R: Debug> PanderaHandler<R> {
+
+impl PanderaHandler {
     pub fn new() -> Self {
         Self {
             _phantom: std::marker::PhantomData,
@@ -56,24 +66,53 @@ impl<R: Debug> PanderaHandler<R> {
             string_type_regex: regex::Regex::new(r"^(pa\.String|pd\.StringDtype)$").unwrap(),
             date_type_regex: regex::Regex::new(r"^(pa\.Date)$").unwrap(),
             datetime_type_regex: regex::Regex::new(r"^(pa\.(DateTime|Timestamp)|pd\.DatetimeTZDtype)$").unwrap(),
+            parsed_pandera_cache: HashMap::new(),
         }
     }
 
     pub fn generate_pandera_dataframe_factory(
-        &self,
-        class_def: &StmtClassDef<R>,
+        &mut self,
+        class_id: &ClassID,
+        visitor: &mut ClassVisitor,
     ) -> Result<Option<String>> {
-        let (class_name, fields) = match self.parse_pandera_dataframe_model(class_def)? {
-            Some(result) => result,
-            None => return Ok(None),
-        };
+        let generic_class_defs =
+            visitor.get_class_defs_of_base(class_id, &"pandera.DataFrameModel".to_string());
+        let pandas_class_defs =
+            visitor.get_class_defs_of_base(class_id, &"pandera.pandas.DataFrame".to_string());
+        let parsed_pandera_classes = generic_class_defs
+            .into_iter()
+            .chain(pandas_class_defs.into_iter())
+            .map(|class_def| self.parse_pandera_dataframe_model(class_def))
+            .collect::<Result<Vec<_>>>()?;
+
+        let class_name = class_id.class_name();
+        // create a set of field names to track duplicates
+        let mut field_names = HashSet::new();
+        let mut fields = Vec::new();
+        for parsed_class in parsed_pandera_classes.into_iter().flatten() {
+            if parsed_class.class_name != class_name {
+                eprintln!(
+                    "Class name mismatch: expected {}, found {}",
+                    class_name, parsed_class.class_name
+                );
+                continue;
+            }
+            for field in parsed_class.fields {
+                if field_names.insert(field.name.clone()) {
+                    // Only add the field if it is not already present
+                    fields.push(field);
+                } else {
+                    eprintln!("Duplicate field found: {}", field.name);
+                }
+            }
+        }
 
         let record_class_name = &format!("{}Record", class_name);
         Ok(Some(
             PanderaFactoryTemplate {
                 record_class_name: &format!("{}Record", class_name),
                 record_factory_name: strings::to_snake_case(record_class_name).as_str(),
-                dataframe_schema_class_name: &class_name,
+                dataframe_schema_class_name: class_name,
                 fields,
             }
             .render()?,
@@ -81,15 +120,15 @@ impl<R: Debug> PanderaHandler<R> {
     }
 
     fn parse_pandera_dataframe_model(
-        &self,
-        class_def: &StmtClassDef<R>,
-    ) -> Result<Option<(String, Vec<Field>)>> {
-        if !self.is_pandera_dataframe_model(class_def) {
-            return Ok(None); // not a pandera dataframe model
-        };
-
+        &mut self,
+        class_def: ClassDef<TextRange>,
+    ) -> Result<Option<ParsedPanderaClass>> {
+        if let Some(cache) = self.parsed_pandera_cache.get(&class_def.id) {
+            return Ok(Some(cache.clone()));
+        }
         let class_name = class_def.name.to_string();
         let fields: Vec<Field> = class_def
+            .stmt_class_def
             .body
             .iter()
             .filter_map(|stmt| stmt.as_ann_assign_stmt())
@@ -98,30 +137,12 @@ impl<R: Debug> PanderaHandler<R> {
             .into_iter()
             .flatten()
             .collect();
-        Ok(Some((class_name, fields)))
-    }
-
-    // check the class based on `pa.DataFrameModel`
-    // NOTE: this function does not check inheritance
-    // TODO: check inheritance
-    fn is_pandera_dataframe_model(&self, class_def: &StmtClassDef<R>) -> bool {
-        class_def.bases.iter().any(|base| {
-            let Some(ExprAttribute { value, attr, .. }) = base.as_attribute_expr() else {
-                return false;
-            };
-            if value
-                .as_name_expr()
-                .is_some_and(|name| name.id.as_str() != "pa")
-            {
-                return false;
-            }
-            attr == "DataFrameModel"
-        })
+        Ok(Some(ParsedPanderaClass { class_name, fields }))
     }
 
     fn get_pandera_parameter_from_field_value(
         &self,
-        field_value: &ExprCall<R>,
+        field_value: &ExprCall<TextRange>,
     ) -> Result<Option<PanderaFieldParameter>> {
         let mut ge = None;
         let mut le = None;
@@ -169,7 +190,7 @@ impl<R: Debug> PanderaHandler<R> {
 
     fn get_field_type_from_attribute_expr(
         &self,
-        attribute: &ExprAttribute<R>,
+        attribute: &ExprAttribute<TextRange>,
         pandera_field_parameter: &PanderaFieldParameter,
     ) -> Option<FieldType> {
         // extract part of `pa` and `pd`
@@ -228,7 +249,7 @@ impl<R: Debug> PanderaHandler<R> {
 
     fn get_field_type_from_name_expr(
         &self,
-        name_expr: &ExprName<R>,
+        name_expr: &ExprName<TextRange>,
         pandera_field_parameter: &PanderaFieldParameter,
     ) -> FieldType {
         // handle type of python like int, float, str, bool
@@ -259,14 +280,14 @@ impl<R: Debug> PanderaHandler<R> {
             });
         }
         eprintln!("Unknown field type: {}, which handled as Any", name_expr.id);
-        return FieldType::Any(FieldTypeAny {
+        FieldType::Any(FieldTypeAny {
             description: pandera_field_parameter.description.clone(),
-        });
+        })
     }
 
     fn get_field_type_from_series_ann(
         &self,
-        field_ann: &ExprSubscript<R>,
+        field_ann: &ExprSubscript<TextRange>,
         pandera_field_parameter: &PanderaFieldParameter,
     ) -> Option<FieldType> {
         if field_ann
@@ -311,12 +332,12 @@ impl<R: Debug> PanderaHandler<R> {
             }
         }
         eprintln!("Unknown field type: {:?}", field_ann.slice);
-        return None;
+        None
     }
 
     fn get_field_from_ann_assign(
         &self,
-        ann_assign_stmt: &StmtAnnAssign<R>,
+        ann_assign_stmt: &StmtAnnAssign<TextRange>,
     ) -> Result<Option<Field>> {
         let Some(name) = ann_assign_stmt
             .target

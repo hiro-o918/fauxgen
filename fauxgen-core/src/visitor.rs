@@ -461,8 +461,14 @@ impl ClassVisitor {
                 // Process Python file
                 println!("Processing file: {}", path.display());
                 let content = std::fs::read_to_string(&path)?;
-                let stmts = rustpython_parser::ast::Suite::parse(&content, path.to_str().unwrap())?;
-                self.process_file(&path, stmts);
+                match rustpython_parser::ast::Suite::parse(&content, path.to_str().unwrap()) {
+                    Ok(stmts) => self.process_file(&path, stmts),
+                    Err(e) => {
+                        eprintln!("Error parsing file {}: {}", path.display(), e);
+                        // Skip invalid files
+                        continue;
+                    }
+                };
             } else if path.is_dir() {
                 // Recursively process subdirectories as submodules
                 println!("Processing submodule: {}", path.display());
