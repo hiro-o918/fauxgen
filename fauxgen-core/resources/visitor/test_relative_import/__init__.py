@@ -1,1 +1,1 @@
-# Pythonパッケージとして認識されるようにするための空ファイル
+# Empty file to ensure this directory is recognized as a Python package

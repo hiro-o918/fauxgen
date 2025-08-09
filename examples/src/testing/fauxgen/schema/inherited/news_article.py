@@ -1,0 +1,56 @@
+import datetime
+from typing import Any, TypedDict
+
+import fauxgen as f
+
+
+class NewsArticleRecord(TypedDict):
+    """A data structure representing NewsArticle entries."""
+    id: int
+    title: str
+    author_id: int
+    content: str
+    published_at: datetime.datetime
+    category: str
+    source: str | None
+
+
+def news_article_record(
+    *,
+    id: int | f.Unset = f.UNSET,
+    title: str | f.Unset = f.UNSET,
+    author_id: int | f.Unset = f.UNSET,
+    content: str | f.Unset = f.UNSET,
+    published_at: datetime.datetime | f.Unset = f.UNSET,
+    category: str | f.Unset = f.UNSET,
+    source: str | None | f.Unset = f.UNSET,
+    seed_: int | None = None,
+) -> NewsArticleRecord:
+    """Creates a mock NewsArticle entry with randomized values.
+
+    Each field is generated with appropriate constraints and validation rules.
+    Values can be overridden by providing specific field values.
+
+    Args:
+        id (int): Unique identifier for the article
+        title (str): Article title
+        author_id (int): Unique identifier of the article's author
+        content (str): Main body of the news article
+        published_at (datetime.datetime): Timestamp when the news was published
+        category (str): News category
+        source (str | None): Source of the news
+        seed_ (int | None): Seed value for deterministic data generation.
+                            The same seed will always produce the same values.
+
+    Returns:
+        NewsArticleRecord: A new mock entry with generated data.
+    """
+    return {
+        "id": f.Unset.unwrap_or_else(id, lambda: f.gen_int(ge=1, le=101, seed=seed_)),
+        "title": f.Unset.unwrap_or_else(title, lambda: f.gen_string(min_length=5, max_length=10, seed=seed_)),
+        "author_id": f.Unset.unwrap_or_else(author_id, lambda: f.gen_int(ge=1, le=101, seed=seed_)),
+        "content": f.Unset.unwrap_or_else(content, lambda: f.gen_string(min_length=5, max_length=10, seed=seed_)),
+        "published_at": f.Unset.unwrap_or_else(published_at, lambda: f.gen_datetime(from_datetime=datetime.datetime(2020, 1, 1), to_datetime=datetime.datetime(2021, 1, 1), seed=seed_)),
+        "category": f.Unset.unwrap_or_else(category, lambda: f.gen_string(min_length=5, max_length=10, seed=seed_)),
+        "source": f.Unset.unwrap_or_else(source, lambda: f.gen_string(min_length=5, max_length=10, seed=seed_)),
+    }
