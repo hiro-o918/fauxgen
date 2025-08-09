@@ -1,0 +1,116 @@
+import datetime
+from typing import Any, TypedDict
+
+import fauxgen as f
+
+
+class BaseSchemaRecord(TypedDict):
+    """A data structure representing BaseSchema entries."""
+    id: int
+    created_at: str
+
+
+def base_schema_record(
+    *,
+    id: int | f.Unset = f.UNSET,
+    created_at: str | f.Unset = f.UNSET,
+    seed_: int | None = None,
+) -> BaseSchemaRecord:
+    """Creates a mock BaseSchema entry with randomized values.
+
+    Each field is generated with appropriate constraints and validation rules.
+    Values can be overridden by providing specific field values.
+
+    Args:
+        id (int): Field id
+        created_at (str): Field created_at
+        seed_ (int | None): Seed value for deterministic data generation.
+                            The same seed will always produce the same values.
+
+    Returns:
+        BaseSchemaRecord: A new mock entry with generated data.
+    """
+    return {
+        "id": f.Unset.unwrap_or_else(id, lambda: f.gen_int(ge=0, le=100, seed=seed_)),
+        "created_at": f.Unset.unwrap_or_else(created_at, lambda: f.gen_string(min_length=5, max_length=10, seed=seed_)),
+    }
+
+
+class UserSchemaRecord(TypedDict):
+    """A data structure representing UserSchema entries."""
+    id: int
+    created_at: str
+    username: str
+    email: str
+
+
+def user_schema_record(
+    *,
+    id: int | f.Unset = f.UNSET,
+    created_at: str | f.Unset = f.UNSET,
+    username: str | f.Unset = f.UNSET,
+    email: str | f.Unset = f.UNSET,
+    seed_: int | None = None,
+) -> UserSchemaRecord:
+    """Creates a mock UserSchema entry with randomized values.
+
+    Each field is generated with appropriate constraints and validation rules.
+    Values can be overridden by providing specific field values.
+
+    Args:
+        id (int): Field id
+        created_at (str): Field created_at
+        username (str): Field username
+        email (str): Field email
+        seed_ (int | None): Seed value for deterministic data generation.
+                            The same seed will always produce the same values.
+
+    Returns:
+        UserSchemaRecord: A new mock entry with generated data.
+    """
+    return {
+        "id": f.Unset.unwrap_or_else(id, lambda: f.gen_int(ge=0, le=100, seed=seed_)),
+        "created_at": f.Unset.unwrap_or_else(created_at, lambda: f.gen_string(min_length=5, max_length=10, seed=seed_)),
+        "username": f.Unset.unwrap_or_else(username, lambda: f.gen_string(min_length=5, max_length=10, seed=seed_)),
+        "email": f.Unset.unwrap_or_else(email, lambda: f.gen_string(min_length=5, max_length=10, seed=seed_)),
+    }
+
+
+class AdminSchemaRecord(TypedDict):
+    """A data structure representing AdminSchema entries."""
+    id: int
+    created_at: str
+    admin_level: int
+    department: str
+
+
+def admin_schema_record(
+    *,
+    id: int | f.Unset = f.UNSET,
+    created_at: str | f.Unset = f.UNSET,
+    admin_level: int | f.Unset = f.UNSET,
+    department: str | f.Unset = f.UNSET,
+    seed_: int | None = None,
+) -> AdminSchemaRecord:
+    """Creates a mock AdminSchema entry with randomized values.
+
+    Each field is generated with appropriate constraints and validation rules.
+    Values can be overridden by providing specific field values.
+
+    Args:
+        id (int): Field id
+        created_at (str): Field created_at
+        admin_level (int): Field admin_level
+        department (str): Field department
+        seed_ (int | None): Seed value for deterministic data generation.
+                            The same seed will always produce the same values.
+
+    Returns:
+        AdminSchemaRecord: A new mock entry with generated data.
+    """
+    return {
+        "id": f.Unset.unwrap_or_else(id, lambda: f.gen_int(ge=0, le=100, seed=seed_)),
+        "created_at": f.Unset.unwrap_or_else(created_at, lambda: f.gen_string(min_length=5, max_length=10, seed=seed_)),
+        "admin_level": f.Unset.unwrap_or_else(admin_level, lambda: f.gen_int(ge=1, le=5, seed=seed_)),
+        "department": f.Unset.unwrap_or_else(department, lambda: f.gen_string(min_length=5, max_length=10, seed=seed_)),
+    }

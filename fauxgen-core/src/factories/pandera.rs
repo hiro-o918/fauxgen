@@ -8,6 +8,7 @@ use crate::{
 };
 use anyhow::{Ok, Result};
 use askama::Template;
+use log::debug;
 use rustpython_parser::{
     ast::{ExprAttribute, ExprCall, ExprName, ExprSubscript, StmtAnnAssign},
     text_size::TextRange,
@@ -16,7 +17,6 @@ use std::collections::{HashMap, HashSet};
 
 #[derive(Clone)]
 struct ParsedPanderaClass {
-    class_name: String,
     fields: Vec<Field>,
 }
 
@@ -79,33 +79,40 @@ impl PanderaHandler {
             visitor.get_class_defs_of_base(class_id, &"pandera.DataFrameModel".to_string());
         let pandas_class_defs =
             visitor.get_class_defs_of_base(class_id, &"pandera.pandas.DataFrame".to_string());
-        let parsed_pandera_classes = generic_class_defs
+        let this_class_def = visitor
+            .get_class_def(class_id)
+            .ok_or_else(|| anyhow::anyhow!("Class definition not found for {}", class_id))?
+            .clone();
+        let all_class_defs = generic_class_defs
             .into_iter()
             .chain(pandas_class_defs.into_iter())
+            .chain(vec![this_class_def])
+            .collect::<Vec<_>>();
+        debug!(
+            "Generating factory code for class {} with definitions: {:?}",
+            class_id.class_name(),
+            all_class_defs
+                .iter()
+                .map(|class_def| class_def.name.as_str())
+                .collect::<Vec<_>>()
+        );
+        let parsed_pandera_classes = all_class_defs
+            .into_iter()
             .map(|class_def| self.parse_pandera_dataframe_model(class_def))
             .collect::<Result<Vec<_>>>()?;
-
         let class_name = class_id.class_name();
         // create a set of field names to track duplicates
         let mut field_names = HashSet::new();
         let mut fields = Vec::new();
         for parsed_class in parsed_pandera_classes.into_iter().flatten() {
-            if parsed_class.class_name != class_name {
-                eprintln!(
-                    "Class name mismatch: expected {}, found {}",
-                    class_name, parsed_class.class_name
-                );
-                continue;
-            }
             for field in parsed_class.fields {
                 if field_names.insert(field.name.clone()) {
                     // Only add the field if it is not already present
                     fields.push(field);
-                } else {
-                    eprintln!("Duplicate field found: {}", field.name);
                 }
             }
         }
+        debug!("Final fields for class {}: {:?}", class_name, fields);
 
         let record_class_name = &format!("{}Record", class_name);
         Ok(Some(
@@ -126,7 +133,6 @@ impl PanderaHandler {
         if let Some(cache) = self.parsed_pandera_cache.get(&class_def.id) {
             return Ok(Some(cache.clone()));
         }
-        let class_name = class_def.name.to_string();
         let fields: Vec<Field> = class_def
             .stmt_class_def
             .body
@@ -137,7 +143,7 @@ impl PanderaHandler {
             .into_iter()
             .flatten()
             .collect();
-        Ok(Some(ParsedPanderaClass { class_name, fields }))
+        Ok(Some(ParsedPanderaClass { fields }))
     }
 
     fn get_pandera_parameter_from_field_value(

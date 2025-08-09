@@ -5,6 +5,7 @@ use std::{
 };
 
 use anyhow::Result;
+use log::{debug, error};
 use rustpython_ast::{
     text_size::TextRange, Stmt, StmtClassDef, StmtImport, StmtImportFrom, Visitor,
 };
@@ -94,11 +95,7 @@ impl FileImports {
     }
 
     /// Resolve a relative import to an absolute module path
-    fn resolve_relative_import(
-        &self,
-        relative_path: &str,
-        current_module_path: &Path,
-    ) -> String {
+    fn resolve_relative_import(&self, relative_path: &str, current_module_path: &Path) -> String {
         // ドットの数をカウント
         let dot_count = relative_path.chars().take_while(|&c| c == '.').count();
 
@@ -440,7 +437,7 @@ impl ClassVisitor {
         // Process the module's __init__.py file first if it exists
         let init_file = module_dir.join("__init__.py");
         if init_file.exists() {
-            println!("Processing module init: {}", init_file.display());
+            debug!("Processing module init: {}", init_file.display());
             let content = std::fs::read_to_string(&init_file)?;
             let stmts =
                 rustpython_parser::ast::Suite::parse(&content, init_file.to_str().unwrap())?;
@@ -459,19 +456,19 @@ impl ClassVisitor {
 
             if path.is_file() && path.extension().is_some_and(|ext| ext == "py") {
                 // Process Python file
-                println!("Processing file: {}", path.display());
+                debug!("Processing file: {}", path.display());
                 let content = std::fs::read_to_string(&path)?;
                 match rustpython_parser::ast::Suite::parse(&content, path.to_str().unwrap()) {
                     Ok(stmts) => self.process_file(&path, stmts),
                     Err(e) => {
-                        eprintln!("Error parsing file {}: {}", path.display(), e);
+                        error!("Error parsing file {}: {}", path.display(), e);
                         // Skip invalid files
                         continue;
                     }
                 };
             } else if path.is_dir() {
                 // Recursively process subdirectories as submodules
-                println!("Processing submodule: {}", path.display());
+                debug!("Processing submodule: {}", path.display());
                 self.process_module(&path)?;
             }
         }
@@ -497,6 +494,10 @@ impl ClassVisitor {
     // Get all class definitions
     pub fn get_class_defs(&self) -> &HashMap<ClassID, ClassDef<TextRange>> {
         &self.class_defs
+    }
+
+    pub fn get_class_def(&self, class_id: &ClassID) -> Option<&ClassDef<TextRange>> {
+        self.class_defs.get(class_id)
     }
 
     // Get class IDs for a specific file
@@ -551,10 +552,14 @@ impl ClassVisitor {
             for parent_id in &parent_ids {
                 // Recursively check each parent
                 let mut parent_results = self.get_class_defs_of_base(parent_id, base_class);
-                if !parent_results.is_empty() {
-                    result.append(&mut parent_results);
-                }
+                result.append(&mut parent_results);
             }
+            debug!(
+                "Class {} inherits from base class {}: {}",
+                target_class_id,
+                base_class,
+                !result.is_empty()
+            );
         }
 
         // Cache the empty result
@@ -750,7 +755,7 @@ mod tests {
         // Get the absolute path to the resources directory
         let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let root_module_path = project_root.join("resources/visitor/test_nested_inheritance");
-        println!("Root module path: {}", root_module_path.display());
+        debug!("Root module path: {}", root_module_path.display());
 
         // Setup visitor with the test resources directory
         let mut visitor = ClassVisitor::new(root_module_path.clone());
@@ -844,7 +849,7 @@ mod tests {
         // Get the absolute path to the resources directory
         let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let root_module_path = project_root.join("resources/visitor/test_alias_import");
-        println!("Root module path: {}", root_module_path.display());
+        debug!("Root module path: {}", root_module_path.display());
 
         // Setup visitor with the test resources directory
         let mut visitor = ClassVisitor::new(root_module_path.clone());

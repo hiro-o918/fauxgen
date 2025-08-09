@@ -166,6 +166,10 @@ mod tests {
     use rstest::rstest;
     use tempfile::TempDir;
 
+    fn init() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
+
     fn get_all_files(dir: &Path) -> Result<Vec<PathBuf>> {
         let mut files = Vec::new();
         for entry in std::fs::read_dir(dir)? {
@@ -182,6 +186,7 @@ mod tests {
 
     #[rstest]
     fn test_write_factory_codes() {
+        init();
         let module_dir = PathBuf::from("./resources/generator/write_factory_codes/input");
         let output_dir = TempDir::new().unwrap().path().to_path_buf();
         let expected_dir = PathBuf::from("./resources/generator/write_factory_codes/expected");
