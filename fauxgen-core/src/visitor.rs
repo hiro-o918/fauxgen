@@ -196,16 +196,16 @@ impl FileImports {
 #[derive(Debug, Clone)]
 pub struct ClassDef<R = TextRange> {
     // Class id is a unique identifier for the class, which is a combination of the module path and class name
-    id: String,
+    pub id: String,
     // Name of the class
-    name: String,
+    pub name: String,
     // path to the module where the class is defined
-    module_path: PathBuf,
+    pub module_path: PathBuf,
     // List of fields defined in the class
     // this includes fields defined in the class itself and inherited from parent classes
-    stmt_class_def: StmtClassDef<R>,
+    pub stmt_class_def: StmtClassDef<R>,
     // parent class IDs (for resolving inheritance later)
-    parent_ids: Vec<String>,
+    pub parent_ids: Vec<String>,
 }
 
 impl PartialEq for ClassDef<TextRange> {
@@ -218,7 +218,19 @@ impl PartialEq for ClassDef<TextRange> {
 }
 
 // ClassID is a unique identifier for a class, which is a combination of the module path and class name
-type ClassID = String;
+pub type ClassID = String;
+
+/// Trait for ClassID related operations
+pub trait ClassIDExt {
+    /// Get the class name from the class ID
+    fn class_name(&self) -> &str;
+}
+
+impl ClassIDExt for String {
+    fn class_name(&self) -> &str {
+        self.split('.').last().unwrap_or("")
+    }
+}
 
 #[derive(Debug)]
 pub struct ClassVisitor<R = TextRange> {
@@ -229,8 +241,13 @@ pub struct ClassVisitor<R = TextRange> {
     // Maps file paths to their import information
     file_imports: HashMap<PathBuf, FileImports>,
 
+    file_class_ids: HashMap<PathBuf, Vec<ClassID>>,
+
     // Collection of all class definitions found
     class_defs: HashMap<ClassID, ClassDef<R>>,
+
+    // Cache for get_class_defs_of_base results
+    base_classes_cache: HashMap<ClassID, Vec<ClassDef<R>>>,
 }
 
 impl Visitor<TextRange> for ClassVisitor<TextRange> {
@@ -318,8 +335,14 @@ impl Visitor<TextRange> for ClassVisitor<TextRange> {
             parent_ids,
         };
 
-        // Store the class definition
-        self.class_defs.insert(class_id, class_def);
+        // Store the class definition in class_defs map
+        self.class_defs.insert(class_id.clone(), class_def);
+
+        // Add the class ID to the file_class_ids map
+        self.file_class_ids
+            .entry(self.current_module_path.clone())
+            .or_default()
+            .push(class_id);
     }
 }
 
@@ -330,7 +353,9 @@ impl ClassVisitor {
             root_module_path: root_module_path.clone(),
             current_module_path: root_module_path,
             file_imports: HashMap::new(),
+            file_class_ids: HashMap::new(),
             class_defs: HashMap::new(),
+            base_classes_cache: HashMap::new(),
         }
     }
 
@@ -344,7 +369,7 @@ impl ClassVisitor {
         // Get the module path relative to the root module
         let rel_path = match self
             .current_module_path
-            .strip_prefix(&self.root_module_path.parent().unwrap())
+            .strip_prefix(self.root_module_path.parent().unwrap())
         {
             Ok(path) => path,
             Err(_) => {
@@ -467,6 +492,70 @@ impl ClassVisitor {
     pub fn get_class_defs(&self) -> &HashMap<ClassID, ClassDef<TextRange>> {
         &self.class_defs
     }
+
+    // Get class IDs for a specific file
+    pub fn get_class_ids_for_file(&self, file_path: &Path) -> Option<&Vec<ClassID>> {
+        self.file_class_ids.get(file_path)
+    }
+
+    // Get all file to class IDs mappings
+    pub fn get_file_class_ids(&self) -> &HashMap<PathBuf, Vec<ClassID>> {
+        &self.file_class_ids
+    }
+
+    /// Check if a class inherits from a specified base class
+    /// - target_class_id: The class ID to check
+    /// - base_class: The base class ID to check against
+    /// Returns true if target_class inherits from base_class (directly or indirectly)
+    pub fn get_class_defs_of_base(
+        &mut self,
+        target_class_id: &ClassID,
+        base_class: &ClassID,
+    ) -> Vec<ClassDef> {
+        // Check if we have a cached result
+        if let Some(cached_result) = self.base_classes_cache.get(target_class_id) {
+            return cached_result.clone();
+        }
+
+        let mut result = Vec::new();
+
+        // If the target class is the base class, return empty vector
+        if target_class_id == base_class {
+            return result;
+        }
+
+        // Make a copy of the class definition and parent IDs to avoid borrowing self
+        let class_def_clone_opt = self.class_defs.get(target_class_id).cloned();
+
+        if let Some(class_def) = class_def_clone_opt {
+            // Check if the target class directly inherits from the base class
+            if class_def
+                .parent_ids
+                .iter()
+                .any(|parent_id| parent_id == base_class)
+            {
+                // Direct inheritance found
+                result.push(class_def.clone());
+            }
+
+            // Clone the parent_ids to avoid borrow issues
+            let parent_ids = class_def.parent_ids.clone();
+
+            // Check for indirect inheritance through parents
+            for parent_id in &parent_ids {
+                // Recursively check each parent
+                let mut parent_results = self.get_class_defs_of_base(parent_id, base_class);
+                if !parent_results.is_empty() {
+                    result.append(&mut parent_results);
+                }
+            }
+        }
+
+        // Cache the empty result
+        self.base_classes_cache
+            .insert(target_class_id.clone(), result.clone());
+        result
+    }
 }
 
 #[cfg(test)]
@@ -497,7 +586,6 @@ mod tests {
         // Get the absolute path to the resources directory
         let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let root_module_path = project_root.join("resources/visitor/test_relative_import");
-        println!("Root module path: {}", root_module_path.display());
 
         // Setup visitor with the test resources directory
         let mut visitor = ClassVisitor::new(root_module_path.clone());
@@ -507,7 +595,6 @@ mod tests {
 
         // Check inheritance map
         let inheritance_map = visitor.get_inheritance_map();
-        println!("Actual inheritance map: {:?}", inheritance_map);
         assert!(
             inheritance_map
                 == HashMap::from([
@@ -524,8 +611,6 @@ mod tests {
 
         // Check class definitions
         let class_defs = visitor.get_class_defs();
-        // Print the actual class definitions for debugging
-        println!("Actual class_defs: {:?}", class_defs);
 
         assert!(
             class_defs
@@ -554,6 +639,23 @@ mod tests {
                 ])
         );
 
+        // Check file_class_ids mapping
+        let file_class_ids = visitor.get_file_class_ids();
+        // Define expected file_class_ids mapping
+        let expected_file_class_ids: HashMap<PathBuf, Vec<String>> = HashMap::from([
+            (
+                root_module_path.join("subpackage/relative_import.py"),
+                vec!["test_relative_import.subpackage.relative_import.RelativeUser".to_string()],
+            ),
+            (
+                root_module_path.join("base_model.py"),
+                vec!["test_relative_import.base_model.BaseModel".to_string()],
+            ),
+        ]);
+
+        // Compare entire maps
+        assert_eq!(file_class_ids, &expected_file_class_ids);
+
         Ok(())
     }
 
@@ -565,7 +667,6 @@ mod tests {
         // Get the absolute path to the resources directory
         let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let root_module_path = project_root.join("resources/visitor/test_inheritance");
-        println!("Root module path: {}", root_module_path.display());
 
         // Setup visitor with the test resources directory
         let mut visitor = ClassVisitor::new(root_module_path.clone());
@@ -618,6 +719,21 @@ mod tests {
                     )
                 ])
         );
+
+        // Check file_class_ids mapping
+        let file_class_ids = visitor.get_file_class_ids();
+        let expected_file_class_ids: HashMap<PathBuf, Vec<String>> = HashMap::from([
+            (
+                root_module_path.join("base_models.py"),
+                vec![
+                    "test_inheritance.base_models.BaseDataFrameModel".to_string(),
+                    "test_inheritance.base_models.UserBase".to_string()
+                ],
+            ),
+        ]);
+
+        // Compare entire maps
+        assert_eq!(file_class_ids, &expected_file_class_ids);
 
         Ok(())
     }
@@ -702,6 +818,17 @@ mod tests {
                 ])
         );
 
+        // Check file_class_ids mapping
+        let file_class_ids = visitor.get_file_class_ids();
+        let expected_file_class_ids: HashMap<PathBuf, Vec<String>> = HashMap::from([(
+            root_module_path.join("nested_model.py"),
+            vec![
+                "test_nested_inheritance.nested_model.BaseDataFrameModel".to_string(),
+                "test_nested_inheritance.nested_model.User".to_string(),
+                "test_nested_inheritance.nested_model.UserExtension".to_string()
+            ],
+        )]);
+        assert_eq!(file_class_ids, &expected_file_class_ids);
         Ok(())
     }
 
@@ -764,6 +891,20 @@ mod tests {
                     )
                 ])
         );
+
+        // Check file_class_ids mapping
+        let file_class_ids = visitor.get_file_class_ids();
+        let expected_file_class_ids: HashMap<PathBuf, Vec<String>> = HashMap::from([
+            (
+                root_module_path.join("alias_import.py"),
+                vec!["test_alias_import.alias_import.AliasUser".to_string()],
+            ),
+            (
+                root_module_path.join("base_models.py"),
+                vec!["test_alias_import.base_models.BaseDataFrameModel".to_string()],
+            ),
+        ]);
+        assert!(file_class_ids == &expected_file_class_ids);
 
         Ok(())
     }
