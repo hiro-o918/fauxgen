@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.3.0](https://github.com/hiro-o918/fauxgen/compare/fauxgen-core@v0.2.2...fauxgen-core@v0.3.0) (2025-08-09)
+
+
+### Features
+
+* Support schema inheritance with improved visitor pattern ([#66](https://github.com/hiro-o918/fauxgen/issues/66)) ([90a02d0](https://github.com/hiro-o918/fauxgen/commit/90a02d0b21a221654a38f6b0bb9e5da69832d54c))
+
+
+### Bug Fixes
+
+* **deps:** update rust crate clap to v4.5.37 ([#53](https://github.com/hiro-o918/fauxgen/issues/53)) ([2201efe](https://github.com/hiro-o918/fauxgen/commit/2201efea22adb2470dda39ceb0752cef2d6e8847))
+* **deps:** update rust crate clap to v4.5.38 ([#59](https://github.com/hiro-o918/fauxgen/issues/59)) ([0032b3a](https://github.com/hiro-o918/fauxgen/commit/0032b3a7bd1665d5a08c8028e8c6e500220ef08b))
+* **deps:** update rust crate clap to v4.5.43 ([#64](https://github.com/hiro-o918/fauxgen/issues/64)) ([2955121](https://github.com/hiro-o918/fauxgen/commit/295512135858af538ac49c4ef298bab65a0cf48f))
+* **deps:** update rust crate clap_complete to v4.5.48 ([#56](https://github.com/hiro-o918/fauxgen/issues/56)) ([6ed716d](https://github.com/hiro-o918/fauxgen/commit/6ed716d48d2971fa1ff51026885758d47604b58b))
+* **deps:** update rust crate clap_complete to v4.5.49 ([#57](https://github.com/hiro-o918/fauxgen/issues/57)) ([daf68a1](https://github.com/hiro-o918/fauxgen/commit/daf68a18bfcd84901bc6c629348ad3441988eb26))
+* **deps:** update rust crate clap_complete to v4.5.50 ([#58](https://github.com/hiro-o918/fauxgen/issues/58)) ([38b9813](https://github.com/hiro-o918/fauxgen/commit/38b9813ff7081e3ad2adc0d73cc42893f518c3a5))
+* **deps:** update rust crate clap_complete to v4.5.56 ([#65](https://github.com/hiro-o918/fauxgen/issues/65)) ([0bd8310](https://github.com/hiro-o918/fauxgen/commit/0bd831072c3164c64893a0df1bc9ab36b0cc06a0))
+* **deps:** update rust minor-major dependencies ([#55](https://github.com/hiro-o918/fauxgen/issues/55)) ([000163e](https://github.com/hiro-o918/fauxgen/commit/000163e834ed3e91da8b90a288ffcdc9a9af79ab))
+* **deps:** update rust patch dependencies ([#60](https://github.com/hiro-o918/fauxgen/issues/60)) ([b3972fc](https://github.com/hiro-o918/fauxgen/commit/b3972fcfcb36d0f7cd882e43915c22893c1f8cd4))
+* **deps:** update rust patch dependencies ([#61](https://github.com/hiro-o918/fauxgen/issues/61)) ([e62916b](https://github.com/hiro-o918/fauxgen/commit/e62916be6a1cbf6b0ad2e1fb29fffe289baa1405))
+* **deps:** update rust patch dependencies ([#62](https://github.com/hiro-o918/fauxgen/issues/62)) ([6c301e8](https://github.com/hiro-o918/fauxgen/commit/6c301e8f25a2ba2d4c4b79a6d2ea8be61e6374d8))
+* **deps:** update rust patch dependencies ([#63](https://github.com/hiro-o918/fauxgen/issues/63)) ([06db26a](https://github.com/hiro-o918/fauxgen/commit/06db26aa8a6f6f78a0da312a25c3b5dd51b565d1))
+
+
+### Miscellaneous
+
+* add do not edit comment ([#67](https://github.com/hiro-o918/fauxgen/issues/67)) ([9866cf1](https://github.com/hiro-o918/fauxgen/commit/9866cf13fba8262fc69fa7816be36f4435d65298))
+* **deps:** lock file maintenance ([#48](https://github.com/hiro-o918/fauxgen/issues/48)) ([aba2e18](https://github.com/hiro-o918/fauxgen/commit/aba2e18012cd0fe3b39f39fc41f2bfe402572f8c))
+
 ## [0.2.2](https://github.com/hiro-o918/fauxgen/compare/fauxgen-core@v0.2.1...fauxgen-core@v0.2.2) (2025-04-17)
 
 
