@@ -191,6 +191,7 @@ mod tests {
 
     #[fixture]
     fn generator_for_render_factory_code_from_file() -> Generator {
+        init();
         let module_dir = PathBuf::from("./resources/generator/render_factory_code_from_file/input");
         let mut generator = Generator::new(module_dir.clone());
         generator.process_module().unwrap();
@@ -198,21 +199,20 @@ mod tests {
     }
 
     #[rstest]
-    #[case("pandera_all_fields_input.py", "pandera_all_fields_expected.py")]
-    #[case(
-        "pandera_field_parameters_input.py",
-        "pandera_field_parameters_expected.py"
-    )]
+    #[case("pandera_all_fields")]
+    #[case("pandera_field_parameters")]
+    #[case("pandera_pandas_import")]
+    #[case("pandera_polars_import")]
     fn test_render_factory_code_from_file_should_generate_pandera_record_factory(
-        #[case] input_file: &str,
-        #[case] expected_file: &str,
+        #[case] kind: &str,
         #[from(generator_for_render_factory_code_from_file)] mut generator: Generator,
     ) {
+        init();
         let input_dir = PathBuf::from("./resources/generator/render_factory_code_from_file/input");
         let expected_dir =
             PathBuf::from("./resources/generator/render_factory_code_from_file/expected");
-        let file = input_dir.join(input_file);
-        let result = generator.render_factory_code_from_file(&file);
+        let input_file = input_dir.join(format!("{}.py", kind));
+        let result = generator.render_factory_code_from_file(&input_file);
         assert!(
             result.is_ok(),
             "Failed to render factory code from file: {:?}",
@@ -220,7 +220,7 @@ mod tests {
         );
         let actual_factory_code = result.unwrap();
         let expected_factory_code =
-            std::fs::read_to_string(expected_dir.join(expected_file)).unwrap();
+            std::fs::read_to_string(expected_dir.join(format!("{}.py", kind))).unwrap();
         assert_eq!(actual_factory_code, Some(expected_factory_code));
     }
 
@@ -230,6 +230,7 @@ mod tests {
         #[case] input_file: &str,
         #[from(generator_for_render_factory_code_from_file)] mut generator: Generator,
     ) {
+        init();
         let module_dir = PathBuf::from("./resources/generator/render_factory_code_from_file");
         let file = module_dir.join(input_file);
         let result = generator.render_factory_code_from_file(&file);

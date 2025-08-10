@@ -222,7 +222,12 @@ impl ClassIDExt for String {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct BaseClassCacheKey {
+    target_class_id: ClassID,
+    base_class: ClassID,
+}
+
 pub struct ClassVisitor<R = TextRange> {
     _phantom: std::marker::PhantomData<R>,
     root_module_path: PathBuf,
@@ -237,7 +242,7 @@ pub struct ClassVisitor<R = TextRange> {
     class_defs: HashMap<ClassID, ClassDef<R>>,
 
     // Cache for get_class_defs_of_base results
-    base_classes_cache: HashMap<ClassID, Vec<ClassDef<R>>>,
+    base_classes_cache: HashMap<BaseClassCacheKey, Vec<ClassDef<R>>>,
 }
 
 impl Visitor<TextRange> for ClassVisitor<TextRange> {
@@ -513,7 +518,16 @@ impl ClassVisitor {
         base_class: &ClassID,
     ) -> Vec<ClassDef> {
         // Check if we have a cached result
-        if let Some(cached_result) = self.base_classes_cache.get(target_class_id) {
+        if let Some(cached_result) = self.base_classes_cache.get(&BaseClassCacheKey {
+            target_class_id: target_class_id.clone(),
+            base_class: base_class.clone(),
+        }) {
+            debug!(
+                "Using cached result for {}: inherits from {}: {}",
+                target_class_id,
+                base_class,
+                !cached_result.is_empty()
+            );
             return cached_result.clone();
         }
 
@@ -521,6 +535,10 @@ impl ClassVisitor {
 
         // If the target class is the base class, return empty vector
         if target_class_id == base_class {
+            debug!(
+                "Target class {} is the same as base class {}",
+                target_class_id, base_class
+            );
             return result;
         }
 
@@ -531,10 +549,8 @@ impl ClassVisitor {
             return result;
         };
 
-        // Check if target_class inherits from base_class
         let mut visited = HashSet::new();
         if self.inherits_from(target_class_id, base_class, &mut visited) {
-            // If it does, add it to the result
             result.push(class_def);
 
             // Also find all parent classes in the inheritance path that lead to base_class
@@ -553,10 +569,16 @@ impl ClassVisitor {
             base_class,
             !result.is_empty()
         );
+
         let result = result.into_iter().rev().collect::<Vec<_>>();
         // Cache the result
-        self.base_classes_cache
-            .insert(target_class_id.clone(), result.clone());
+        self.base_classes_cache.insert(
+            BaseClassCacheKey {
+                target_class_id: target_class_id.clone(),
+                base_class: base_class.clone(),
+            },
+            result.clone(),
+        );
         result
     }
 
@@ -564,7 +586,7 @@ impl ClassVisitor {
     fn add_parent_classes_in_path(
         &self,
         current_id: &ClassID,
-        base_class: &ClassID,
+        base_class_id: &ClassID,
         result: &mut Vec<ClassDef>,
         visited: &mut HashSet<ClassID>,
     ) {
@@ -578,25 +600,38 @@ impl ClassVisitor {
             return;
         };
 
+        debug!(
+            "add_parent_classes_in_path: Checking parents of {} for {} inheritance path",
+            current_id, base_class_id
+        );
+
         // Check each parent
         for parent_id in &class_def.parent_ids {
             // Skip if this is the base class itself
-            if parent_id == base_class {
+            if parent_id == base_class_id {
+                debug!(
+                    "add_parent_classes_in_path: Skipping parent {} as it equals base class",
+                    parent_id
+                );
                 continue;
             }
 
             // Check if this parent inherits from the base class
             let mut parent_visited = std::collections::HashSet::new();
-            if self.inherits_from(parent_id, base_class, &mut parent_visited) {
+            if self.inherits_from(parent_id, base_class_id, &mut parent_visited) {
                 // Add this parent to the result if not already present
                 if let Some(parent_def) = self.class_defs.get(parent_id) {
+                    debug!(
+                        "add_parent_classes_in_path: Adding parent {} to inheritance path",
+                        parent_id
+                    );
                     result.push(parent_def.clone());
                 } else {
                     debug!("Parent class {} not found in class definitions", parent_id);
                 }
 
                 // Recursively add its parents
-                self.add_parent_classes_in_path(parent_id, base_class, result, visited);
+                self.add_parent_classes_in_path(parent_id, base_class_id, result, visited);
             }
         }
     }
@@ -619,20 +654,37 @@ impl ClassVisitor {
             return false;
         };
 
-        // Check if this class directly inherits from the ancestor
+        debug!(
+            "inherits_from: Checking if {} inherits from {}. Parents: {:?}",
+            class_id, ancestor_id, class_def.parent_ids
+        );
+
+        // Check direct inheritance
         if class_def.parent_ids.contains(ancestor_id) {
+            debug!(
+                "inherits_from: Direct match! {} directly inherits from {}",
+                class_id, ancestor_id
+            );
             return true;
         }
 
         // Recursively check parent classes
         for parent_id in &class_def.parent_ids {
             if self.inherits_from(parent_id, ancestor_id, visited) {
+                debug!(
+                    "inherits_from: Indirect match! {} inherits from {} through parent {}",
+                    class_id, ancestor_id, parent_id
+                );
                 return true;
             }
         }
 
         // If we get here, no inheritance path was found
         visited.remove(class_id);
+        debug!(
+            "inherits_from: No match! {} does not inherit from {}",
+            class_id, ancestor_id
+        );
         false
     }
 }
@@ -1047,65 +1099,6 @@ mod tests {
                 vec!["test_alias_import.base_models.BaseDataFrameModel".to_string()],
             ),
         ]);
-        assert_eq!(
-            file_class_ids, &expected_file_class_ids,
-            "File class IDs mapping should match expected structure"
-        );
-
-        Ok(())
-    }
-
-    #[rstest]
-    #[test]
-    fn test_visitor_tracks_nested_imports(
-        dummy_stmt_class_def: StmtClassDef<TextRange>,
-    ) -> Result<()> {
-        init();
-        // Get the absolute path to the resources directory
-        let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let root_module_path = project_root.join("resources/visitor/test_new_import");
-        debug!("Root module path: {}", root_module_path.display());
-
-        // Setup visitor with the test resources directory
-        let mut visitor = ClassVisitor::new(root_module_path.clone());
-
-        // Process the entire module
-        visitor.process_module(&root_module_path)?;
-
-        // Check inheritance map
-        let inheritance_map = visitor.get_inheritance_map();
-        assert_eq!(
-            inheritance_map,
-            HashMap::from([(
-                "test_new_import.pandas.PandasModel".to_string(),
-                vec!["pandera.pandas.DataFrameModel".to_string()]
-            )]),
-            "Inheritance map should match expected structure"
-        );
-
-        // Check class definitions
-        let class_defs = visitor.get_class_defs();
-        assert_eq!(
-            class_defs,
-            &HashMap::from([(
-                "test_new_import.pandas.PandasModel".to_string(),
-                ClassDef {
-                    id: "test_new_import.pandas.PandasModel".to_string(),
-                    name: "PandasModel".to_string(),
-                    module_path: root_module_path.join("pandas.py"),
-                    stmt_class_def: dummy_stmt_class_def.clone(),
-                    parent_ids: vec!["pandera.pandas.DataFrameModel".to_string()]
-                }
-            )]),
-            "Class definitions should match expected structure"
-        );
-
-        // Check file_class_ids mapping
-        let file_class_ids = visitor.get_file_class_ids();
-        let expected_file_class_ids: HashMap<PathBuf, Vec<String>> = HashMap::from([(
-            root_module_path.join("pandas.py"),
-            vec!["test_new_import.pandas.PandasModel".to_string()],
-        )]);
         assert_eq!(
             file_class_ids, &expected_file_class_ids,
             "File class IDs mapping should match expected structure"
