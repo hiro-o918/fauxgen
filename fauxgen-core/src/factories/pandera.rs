@@ -8,7 +8,7 @@ use crate::{
 };
 use anyhow::{Ok, Result};
 use askama::Template;
-use log::{debug, error};
+use log::{debug, error, warn};
 use rustpython_parser::{
     ast::{ExprAttribute, ExprCall, ExprName, ExprSubscript, StmtAnnAssign},
     text_size::TextRange,
@@ -75,26 +75,34 @@ impl PanderaHandler {
         class_id: &ClassID,
         visitor: &mut ClassVisitor,
     ) -> Result<Option<String>> {
-        let generic_class_defs =
-            visitor.get_class_defs_of_base(class_id, &"pandera.DataFrameModel".to_string());
-        let pandas_class_defs =
-            visitor.get_class_defs_of_base(class_id, &"pandera.pandas.DataFrameModel".to_string());
-        if generic_class_defs.is_empty() && pandas_class_defs.is_empty() {
-            debug!(
-                "No pandera DataFrameModel or pandas DataFrame found for class {}",
-                class_id.class_name()
-            );
+        // Check both direct and variant-specific inheritance
+        let mut all_class_defs = Vec::new();
+
+        // Check each Pandera model variant directly
+        let base_variants = [
+            "pandera.DataFrameModel".to_string(),
+            "pandera.pandas.DataFrameModel".to_string(),
+            "pandera.polars.DataFrameModel".to_string(),
+        ];
+
+        // Check direct inheritance from any variant
+        for variant in &base_variants {
+            let variant_class_defs = visitor.get_class_defs_of_base(class_id, variant);
+            all_class_defs.extend(variant_class_defs);
+        }
+
+        // Get the current class definition
+        if !all_class_defs.is_empty() {
+            let this_class_def = visitor
+                .get_class_def(class_id)
+                .ok_or_else(|| anyhow::anyhow!("Class definition not found for {}", class_id))?
+                .clone();
+            all_class_defs.push(this_class_def);
+        } else {
+            debug!("No Pandera DataFrameModel found for class {}", class_id);
             return Ok(None);
         }
-        let this_class_def = visitor
-            .get_class_def(class_id)
-            .ok_or_else(|| anyhow::anyhow!("Class definition not found for {}", class_id))?
-            .clone();
-        let all_class_defs = generic_class_defs
-            .into_iter()
-            .chain(pandas_class_defs)
-            .chain(vec![this_class_def])
-            .collect::<Vec<_>>();
+
         debug!(
             "Generating factory code for class {} with definitions: {:?}",
             class_id.class_name(),
@@ -292,7 +300,7 @@ impl PanderaHandler {
                 description: pandera_field_parameter.description.clone(),
             });
         }
-        error!("Unknown field type: {}, which handled as Any", name_expr.id);
+        warn!("Unknown field type: {}, which handled as Any", name_expr.id);
         FieldType::Any(FieldTypeAny {
             description: pandera_field_parameter.description.clone(),
         })
@@ -317,6 +325,7 @@ impl PanderaHandler {
         if let Some(attribute) = field_ann.slice.as_attribute_expr() {
             return self.get_field_type_from_attribute_expr(attribute, pandera_field_parameter);
         }
+
         // handle type of python like int, float, str, bool
         if let Some(attribute) = field_ann.slice.as_name_expr() {
             return Some(self.get_field_type_from_name_expr(attribute, pandera_field_parameter));
