@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.1](https://github.com/hiro-o918/fauxgen/compare/fauxgen-core@v0.3.0...fauxgen-core@v0.3.1) (2025-08-10)
+
+
+### Features
+
+* Add support for pandera.polars ([b6019e1](https://github.com/hiro-o918/fauxgen/commit/b6019e1e89cf9c9d9de376e2a3f2ff3543722795))
+* Support pandera.pandas DataFrameModel import pattern ([#68](https://github.com/hiro-o918/fauxgen/issues/68)) ([8ce02dd](https://github.com/hiro-o918/fauxgen/commit/8ce02dda0770def944150c83d21838cdbf4e29a6))
+
+
+### Bug Fixes
+
+* handling polars and pandas ([0725706](https://github.com/hiro-o918/fauxgen/commit/0725706c523d2b40da86536e50015767d405144e))
+
+
+### Miscellaneous
+
+* release 0.3.1 ([fa96bb4](https://github.com/hiro-o918/fauxgen/commit/fa96bb42fd81d9841095e36e833cc55c3b1b9515))
+
 ## [0.3.0](https://github.com/hiro-o918/fauxgen/compare/fauxgen-core@v0.2.2...fauxgen-core@v0.3.0) (2025-08-09)
 
 
